@@ -1,0 +1,3785 @@
+// ===== FILE: org/apache/commons/cli/AlreadySelectedException.java =====
+package org.apache.commons.cli;
+public class AlreadySelectedException extends ParseException {
+    private static final long serialVersionUID = 3674381532418544760L;
+    private final OptionGroup optionGroup;
+    private final Option option;
+    public AlreadySelectedException(final OptionGroup optionGroup, final Option option) {
+        this(String.format("The option '%s' was specified but an option from this group has already been selected: '%s'", option.getKey(),
+                optionGroup.getSelected()), optionGroup, option);
+    }
+    public AlreadySelectedException(final String message) {
+        this(message, null, null);
+    }
+    private AlreadySelectedException(final String message, final OptionGroup optionGroup, final Option option) {
+        super(message);
+        this.optionGroup = optionGroup;
+        this.option = option;
+    }
+    public Option getOption() {
+        return option;
+    }
+    public OptionGroup getOptionGroup() {
+        return optionGroup;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/AmbiguousOptionException.java =====
+package org.apache.commons.cli;
+import java.util.Collection;
+import java.util.Iterator;
+public class AmbiguousOptionException extends UnrecognizedOptionException {
+    private static final long serialVersionUID = 5829816121277947229L;
+    private static String createMessage(final String option, final Collection<String> matchingOptions) {
+        final StringBuilder buf = new StringBuilder("Ambiguous option: '");
+        buf.append(option);
+        buf.append("'  (could be: ");
+        final Iterator<String> it = matchingOptions.iterator();
+        while (it.hasNext()) {
+            buf.append(Char.APOS);
+            buf.append(it.next());
+            buf.append(Char.APOS);
+            if (it.hasNext()) {
+                buf.append(", ");
+            }
+        }
+        buf.append(")");
+        return buf.toString();
+    }
+    private final Collection<String> matchingOptions;
+    public AmbiguousOptionException(final String option, final Collection<String> matchingOptions) {
+        super(createMessage(option, matchingOptions), option);
+        this.matchingOptions = matchingOptions;
+    }
+    public Collection<String> getMatchingOptions() {
+        return matchingOptions;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/BasicParser.java =====
+package org.apache.commons.cli;
+@Deprecated
+public class BasicParser extends Parser {
+    public BasicParser() {
+    }
+    @Override
+    protected String[] flatten(@SuppressWarnings("unused") final Options options, final String[] arguments,
+            @SuppressWarnings("unused") final boolean stopAtNonOption) {
+        return arguments;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/Char.java =====
+package org.apache.commons.cli;
+final class Char {
+    static final char APOS = '\'';
+    static final char CR = '\r';
+    static final char EQUAL = '=';
+    static final char LF = '\n';
+    static final char SP = ' ';
+    static final char TAB = '\t';
+    private Char() {
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/CommandLine.java =====
+package org.apache.commons.cli;
+import java.io.Serializable;
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+public class CommandLine implements Serializable {
+    public static final class Builder implements Supplier<CommandLine> {
+        static final Consumer<Option> DEPRECATED_HANDLER = o -> System.out.println(o.toDeprecatedString());
+        private final List<String> args = new LinkedList<>();
+        private final List<Option> options = new ArrayList<>();
+        private Consumer<Option> deprecatedHandler = DEPRECATED_HANDLER;
+        @Deprecated
+        public Builder() {
+        }
+        public Builder addArg(final String arg) {
+            if (arg != null) {
+                args.add(arg);
+            }
+            return this;
+        }
+        public Builder addOption(final Option option) {
+            if (option != null) {
+                options.add(option);
+            }
+            return this;
+        }
+        @Deprecated
+        public CommandLine build() {
+            return get();
+        }
+        @Override
+        public CommandLine get() {
+            return new CommandLine(args, options, deprecatedHandler);
+        }
+        public Builder setDeprecatedHandler(final Consumer<Option> deprecatedHandler) {
+            this.deprecatedHandler = deprecatedHandler;
+            return this;
+        }
+    }
+    private static final long serialVersionUID = 1L;
+    public static Builder builder() {
+        return new Builder();
+    }
+    private final List<String> args;
+    private final List<Option> options;
+    private final transient Consumer<Option> deprecatedHandler;
+    protected CommandLine() {
+        this(new LinkedList<>(), new ArrayList<>(), Builder.DEPRECATED_HANDLER);
+    }
+    private CommandLine(final List<String> args, final List<Option> options, final Consumer<Option> deprecatedHandler) {
+        this.args = Objects.requireNonNull(args, "args");
+        this.options = Objects.requireNonNull(options, "options");
+        this.deprecatedHandler = deprecatedHandler;
+    }
+    protected void addArg(final String arg) {
+        if (arg != null) {
+            args.add(arg);
+        }
+    }
+    protected void addOption(final Option option) {
+        if (option != null) {
+            options.add(option);
+        }
+    }
+    private String first(final String[] values) {
+        return values == null ? null : values[0];
+    }
+    private <T> T get(final Supplier<T> supplier) {
+        return supplier == null ? null : supplier.get();
+    }
+    public List<String> getArgList() {
+        return args;
+    }
+    public String[] getArgs() {
+        return args.toArray(Util.EMPTY_STRING_ARRAY);
+    }
+    public int getOptionCount(final char optionChar) {
+        return getOptionCount(String.valueOf(optionChar));
+    }
+    public int getOptionCount(final Option option) {
+        return (int) options.stream().filter(opt -> Objects.equals(opt, option)).count();
+    }
+    public int getOptionCount(final String optionName) {
+        return getOptionCount(resolveOption(optionName));
+    }
+    @Deprecated
+    public Object getOptionObject(final char optionChar) {
+        return getOptionObject(String.valueOf(optionChar));
+    }
+    @Deprecated
+    public Object getOptionObject(final String optionName) {
+        try {
+            return getParsedOptionValue(optionName);
+        } catch (final ParseException pe) {
+            System.err.println("Exception found converting " + optionName + " to desired type: " + pe.getMessage());
+            return null;
+        }
+    }
+    public Properties getOptionProperties(final Option option) {
+        final Properties props = new Properties();
+        options.forEach(processedOption -> {
+            if (processedOption.equals(option)) {
+                processPropertiesFromValues(props, processedOption.getValuesList());
+            }
+        });
+        return props;
+    }
+    public Properties getOptionProperties(final String optionName) {
+        final Properties props = new Properties();
+        options.forEach(option -> {
+            if (optionName.equals(option.getOpt()) || optionName.equals(option.getLongOpt())) {
+                processPropertiesFromValues(props, option.getValuesList());
+            }
+        });
+        return props;
+    }
+    public Option[] getOptions() {
+        return options.toArray(Option.EMPTY_ARRAY);
+    }
+    public String getOptionValue(final char optionChar) {
+        return getOptionValue(String.valueOf(optionChar));
+    }
+    public String getOptionValue(final char optionChar, final String defaultValue) {
+        return getOptionValue(String.valueOf(optionChar), () -> defaultValue);
+    }
+    public String getOptionValue(final char optionChar, final Supplier<String> defaultValue) {
+        return getOptionValue(String.valueOf(optionChar), defaultValue);
+    }
+    public String getOptionValue(final Option option) {
+        return first(getOptionValues(option));
+    }
+    public String getOptionValue(final Option option, final String defaultValue) {
+        return getOptionValue(option, () -> defaultValue);
+    }
+    public String getOptionValue(final Option option, final Supplier<String> defaultValue) {
+        final String answer = getOptionValue(option);
+        return answer != null ? answer : get(defaultValue);
+    }
+    public String getOptionValue(final OptionGroup optionGroup) {
+        return first(getOptionValues(optionGroup));
+    }
+    public String getOptionValue(final OptionGroup optionGroup, final String defaultValue) {
+        return getOptionValue(optionGroup, () -> defaultValue);
+    }
+    public String getOptionValue(final OptionGroup optionGroup, final Supplier<String> defaultValue) {
+        final String answer = getOptionValue(optionGroup);
+        return answer != null ? answer : get(defaultValue);
+    }
+    public String getOptionValue(final String optionName) {
+        return getOptionValue(resolveOption(optionName));
+    }
+    public String getOptionValue(final String optionName, final String defaultValue) {
+        return getOptionValue(resolveOption(optionName), () -> defaultValue);
+    }
+    public String getOptionValue(final String optionName, final Supplier<String> defaultValue) {
+        return getOptionValue(resolveOption(optionName), defaultValue);
+    }
+    public String[] getOptionValues(final char optionChar) {
+        return getOptionValues(String.valueOf(optionChar));
+    }
+    public String[] getOptionValues(final Option option) {
+        if (option == null) {
+            return null;
+        }
+        final List<String> values = new ArrayList<>();
+        options.forEach(processedOption -> {
+            if (processedOption.equals(option)) {
+                if (option.isDeprecated()) {
+                    handleDeprecated(option);
+                }
+                values.addAll(processedOption.getValuesList());
+            }
+        });
+        return values.isEmpty() ? null : values.toArray(Util.EMPTY_STRING_ARRAY);
+    }
+    public String[] getOptionValues(final OptionGroup optionGroup) {
+        if (optionGroup == null || !optionGroup.isSelected()) {
+            return null;
+        }
+        return getOptionValues(optionGroup.getSelected());
+    }
+    public String[] getOptionValues(final String optionName) {
+        return getOptionValues(resolveOption(optionName));
+    }
+    public <T> T getParsedOptionValue(final char optionChar) throws ParseException {
+        return getParsedOptionValue(String.valueOf(optionChar));
+    }
+    public <T> T getParsedOptionValue(final char optionChar, final Supplier<T> defaultValue) throws ParseException {
+        return getParsedOptionValue(String.valueOf(optionChar), defaultValue);
+    }
+    public <T> T getParsedOptionValue(final char optionChar, final T defaultValue) throws ParseException {
+        return getParsedOptionValue(String.valueOf(optionChar), defaultValue);
+    }
+    public <T> T getParsedOptionValue(final Option option) throws ParseException {
+        return getParsedOptionValue(option, () -> null);
+    }
+    @SuppressWarnings("unchecked")
+    public <T> T getParsedOptionValue(final Option option, final Supplier<T> defaultValue) throws ParseException {
+        if (option == null) {
+            return get(defaultValue);
+        }
+        final String res = getOptionValue(option);
+        try {
+            if (res == null) {
+                return get(defaultValue);
+            }
+            return (T) option.getConverter().apply(res);
+        } catch (final Exception e) {
+            throw ParseException.wrap(e);
+        }
+    }
+    public <T> T getParsedOptionValue(final Option option, final T defaultValue) throws ParseException {
+        return getParsedOptionValue(option, () -> defaultValue);
+    }
+    public <T> T getParsedOptionValue(final OptionGroup optionGroup) throws ParseException {
+        return getParsedOptionValue(optionGroup, () -> null);
+    }
+    public <T> T getParsedOptionValue(final OptionGroup optionGroup, final Supplier<T> defaultValue) throws ParseException {
+        if (optionGroup == null || !optionGroup.isSelected()) {
+            return get(defaultValue);
+        }
+        return getParsedOptionValue(optionGroup.getSelected(), defaultValue);
+    }
+    public <T> T getParsedOptionValue(final OptionGroup optionGroup, final T defaultValue) throws ParseException {
+        return getParsedOptionValue(optionGroup, () -> defaultValue);
+    }
+    public <T> T getParsedOptionValue(final String optionName) throws ParseException {
+        return getParsedOptionValue(resolveOption(optionName));
+    }
+    public <T> T getParsedOptionValue(final String optionName, final Supplier<T> defaultValue) throws ParseException {
+        return getParsedOptionValue(resolveOption(optionName), defaultValue);
+    }
+    public <T> T getParsedOptionValue(final String optionName, final T defaultValue) throws ParseException {
+        return getParsedOptionValue(resolveOption(optionName), defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final char optionChar) throws ParseException {
+        return getParsedOptionValues(String.valueOf(optionChar));
+    }
+    public <T> T[] getParsedOptionValues(final char optionChar, final Supplier<T[]> defaultValue) throws ParseException {
+        return getParsedOptionValues(String.valueOf(optionChar), defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final char optionChar, final T[] defaultValue) throws ParseException {
+        return getParsedOptionValues(String.valueOf(optionChar), defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final Option option) throws ParseException {
+        return getParsedOptionValues(option, () -> null);
+    }
+    @SuppressWarnings("unchecked")
+    public <T> T[] getParsedOptionValues(final Option option, final Supplier<T[]> defaultValue) throws ParseException {
+        if (option == null) {
+            return get(defaultValue);
+        }
+        final Class<? extends T> clazz = (Class<? extends T>) option.getType();
+        final String[] values = getOptionValues(option);
+        if (values == null) {
+            return get(defaultValue);
+        }
+        final T[] result = (T[]) Array.newInstance(clazz, values.length);
+        try {
+            for (int i = 0; i < values.length; i++) {
+                result[i] = clazz.cast(option.getConverter().apply(values[i]));
+            }
+            return result;
+        } catch (final Exception t) {
+            throw ParseException.wrap(t);
+        }
+    }
+    public <T> T[] getParsedOptionValues(final Option option, final T[] defaultValue) throws ParseException {
+        return getParsedOptionValues(option, () -> defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final OptionGroup optionGroup) throws ParseException {
+        return getParsedOptionValues(optionGroup, () -> null);
+    }
+    public <T> T[] getParsedOptionValues(final OptionGroup optionGroup, final Supplier<T[]> defaultValue) throws ParseException {
+        if (optionGroup == null || !optionGroup.isSelected()) {
+            return get(defaultValue);
+        }
+        return getParsedOptionValues(optionGroup.getSelected(), defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final OptionGroup optionGroup, final T[] defaultValue) throws ParseException {
+        return getParsedOptionValues(optionGroup, () -> defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final String optionName) throws ParseException {
+        return getParsedOptionValues(resolveOption(optionName));
+    }
+    public <T> T[] getParsedOptionValues(final String optionName, final Supplier<T[]> defaultValue) throws ParseException {
+        return getParsedOptionValues(resolveOption(optionName), defaultValue);
+    }
+    public <T> T[] getParsedOptionValues(final String optionName, final T[] defaultValue) throws ParseException {
+        return getParsedOptionValues(resolveOption(optionName), defaultValue);
+    }
+    private void handleDeprecated(final Option option) {
+        if (deprecatedHandler != null) {
+            deprecatedHandler.accept(option);
+        }
+    }
+    public boolean hasOption(final char optionChar) {
+        return hasOption(String.valueOf(optionChar));
+    }
+    public boolean hasOption(final Option option) {
+        final boolean result = options.contains(option);
+        if (result && option.isDeprecated()) {
+            handleDeprecated(option);
+        }
+        return result;
+    }
+    public boolean hasOption(final OptionGroup optionGroup) {
+        if (optionGroup == null || !optionGroup.isSelected()) {
+            return false;
+        }
+        return hasOption(optionGroup.getSelected());
+    }
+    public boolean hasOption(final String optionName) {
+        return hasOption(resolveOption(optionName));
+    }
+    public Iterator<Option> iterator() {
+        return options.iterator();
+    }
+    private void processPropertiesFromValues(final Properties props, final List<String> values) {
+        for (int i = 0; i < values.size(); i += 2) {
+            props.put(values.get(i), i + 1 < values.size() ? values.get(i + 1) : "true");
+        }
+    }
+    private Option resolveOption(final String optionName) {
+        final String actual = Util.stripLeadingHyphens(optionName);
+        if (actual != null) {
+            return options.stream()
+                    .filter(opt -> actual.equals(opt.getOpt()) || actual.equals(opt.getLongOpt()))
+                    .findFirst().orElse(null);
+        }
+        return null;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/CommandLineParser.java =====
+package org.apache.commons.cli;
+public interface CommandLineParser {
+    CommandLine parse(Options options, String[] arguments) throws ParseException;
+    CommandLine parse(Options options, String[] arguments, boolean stopAtNonOption) throws ParseException;
+}
+
+// ===== FILE: org/apache/commons/cli/Converter.java =====
+package org.apache.commons.cli;
+import java.io.File;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.ParsePosition;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+@FunctionalInterface
+public interface Converter<T, E extends Exception> {
+    Converter<?, RuntimeException> DEFAULT = s -> s;
+    Converter<Class<?>, ClassNotFoundException> CLASS = s -> Class.forName(s, false, Converter.class.getClassLoader());
+    Converter<File, NullPointerException> FILE = File::new;
+    Converter<Path, InvalidPathException> PATH = Paths::get;
+    Converter<Number, NumberFormatException> NUMBER = s -> s.indexOf('.') != -1 ? (Number) Double.valueOf(s) : (Number) Long.valueOf(s);
+    Converter<Object, ReflectiveOperationException> OBJECT = s -> CLASS.apply(s).getConstructor().newInstance();
+    Converter<URL, MalformedURLException> URL = URL::new;
+    Converter<Date, java.text.ParseException> DATE = s -> {
+        final String pattern = "EEE MMM dd HH:mm:ss zzz yyyy";
+        final SimpleDateFormat format = new SimpleDateFormat(pattern);
+        format.setLenient(false);
+        final ParsePosition pos = new ParsePosition(0);
+        Date date = format.parse(s, pos);
+        if (date == null) {
+            final SimpleDateFormat englishFormat = new SimpleDateFormat(pattern, Locale.ENGLISH);
+            englishFormat.setLenient(false);
+            pos.setIndex(0);
+            pos.setErrorIndex(-1);
+            date = englishFormat.parse(s, pos);
+        }
+        if (date == null || pos.getIndex() != s.length()) {
+            final int errorIndex = pos.getErrorIndex() >= 0 ? pos.getErrorIndex() : pos.getIndex();
+            throw new java.text.ParseException(String.format("Unparseable date: \"%s\"", s), errorIndex);
+        }
+        return date;
+    };
+    T apply(String string) throws E;
+}
+
+// ===== FILE: org/apache/commons/cli/DefaultParser.java =====
+package org.apache.commons.cli;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import org.apache.commons.cli.help.OptionFormatter;
+public class DefaultParser implements CommandLineParser {
+    public static final class Builder implements Supplier<DefaultParser> {
+        private boolean allowPartialMatching = true;
+        private Consumer<Option> deprecatedHandler = CommandLine.Builder.DEPRECATED_HANDLER;
+        private Boolean stripLeadingAndTrailingQuotes;
+        private Builder() {
+        }
+        @Deprecated
+        public DefaultParser build() {
+            return get();
+        }
+        @Override
+        public DefaultParser get() {
+            return new DefaultParser(allowPartialMatching, stripLeadingAndTrailingQuotes, deprecatedHandler);
+        }
+        public Builder setAllowPartialMatching(final boolean allowPartialMatching) {
+            this.allowPartialMatching = allowPartialMatching;
+            return this;
+        }
+        public Builder setDeprecatedHandler(final Consumer<Option> deprecatedHandler) {
+            this.deprecatedHandler = deprecatedHandler;
+            return this;
+        }
+        public Builder setStripLeadingAndTrailingQuotes(final Boolean stripLeadingAndTrailingQuotes) {
+            this.stripLeadingAndTrailingQuotes = stripLeadingAndTrailingQuotes;
+            return this;
+        }
+    }
+    public enum NonOptionAction {
+        IGNORE,
+        SKIP,
+        STOP,
+        THROW;
+    }
+    public static Builder builder() {
+        return new Builder();
+    }
+    static int indexOfEqual(final String token) {
+        return token.indexOf(Char.EQUAL);
+    }
+    protected CommandLine cmd;
+    protected Options options;
+    @Deprecated
+    protected boolean stopAtNonOption;
+    protected NonOptionAction nonOptionAction;
+    protected String currentToken;
+    protected Option currentOption;
+    protected boolean skipParsing;
+    protected List expectedOpts;
+    private final boolean allowPartialMatching;
+    private final Boolean stripLeadingAndTrailingQuotes;
+    private final Consumer<Option> deprecatedHandler;
+    public DefaultParser() {
+        this.allowPartialMatching = true;
+        this.stripLeadingAndTrailingQuotes = null;
+        this.deprecatedHandler = CommandLine.Builder.DEPRECATED_HANDLER;
+    }
+    public DefaultParser(final boolean allowPartialMatching) {
+        this.allowPartialMatching = allowPartialMatching;
+        this.stripLeadingAndTrailingQuotes = null;
+        this.deprecatedHandler = CommandLine.Builder.DEPRECATED_HANDLER;
+    }
+    private DefaultParser(final boolean allowPartialMatching, final Boolean stripLeadingAndTrailingQuotes, final Consumer<Option> deprecatedHandler) {
+        this.allowPartialMatching = allowPartialMatching;
+        this.stripLeadingAndTrailingQuotes = stripLeadingAndTrailingQuotes;
+        this.deprecatedHandler = deprecatedHandler;
+    }
+    protected void addArg(final String token) {
+        cmd.addArg(token);
+    }
+    private void checkRequiredArgs() throws ParseException {
+        if (currentOption != null && currentOption.requiresArg()) {
+            if (isJavaProperty(currentOption.getKey()) && currentOption.getValuesList().size() == 1) {
+                return;
+            }
+            throw new MissingArgumentException(currentOption);
+        }
+    }
+    protected void checkRequiredOptions() throws MissingOptionException {
+        if (!expectedOpts.isEmpty()) {
+            throw new MissingOptionException(expectedOpts);
+        }
+    }
+    private String getLongPrefix(final String token) {
+        final String t = Util.stripLeadingHyphens(token);
+        int i;
+        String opt = null;
+        for (i = t.length() - 2; i > 1; i--) {
+            final String prefix = t.substring(0, i);
+            if (options.hasLongOption(prefix)) {
+                opt = prefix;
+                break;
+            }
+        }
+        return opt;
+    }
+    private List<String> getMatchingLongOptions(final String token) {
+        if (allowPartialMatching) {
+            return options.getMatchingOptions(token);
+        }
+        final List<String> matches = new ArrayList<>(1);
+        if (options.hasLongOption(token)) {
+            matches.add(options.getOption(token).getLongOpt());
+        }
+        return matches;
+    }
+    protected void handleConcatenatedOptions(final String token) throws ParseException {
+        for (int i = 1; i < token.length(); i++) {
+            final String ch = String.valueOf(token.charAt(i));
+            if (!options.hasOption(ch)) {
+                handleUnknownToken(nonOptionAction == NonOptionAction.STOP && i > 1 ? token.substring(i) : token);
+                break;
+            }
+            handleOption(options.getOption(ch));
+            if (currentOption != null && token.length() != i + 1) {
+                currentOption.processValue(stripLeadingAndTrailingQuotesDefaultOff(token.substring(i + 1)));
+                break;
+            }
+        }
+    }
+    private void handleLongOption(final String token) throws ParseException {
+        if (indexOfEqual(token) == -1) {
+            handleLongOptionWithoutEqual(token);
+        } else {
+            handleLongOptionWithEqual(token);
+        }
+    }
+    private void handleLongOptionWithEqual(final String token) throws ParseException {
+        final int pos = indexOfEqual(token);
+        final String value = token.substring(pos + 1);
+        final String opt = token.substring(0, pos);
+        final List<String> matchingOpts = getMatchingLongOptions(opt);
+        if (matchingOpts.isEmpty()) {
+            handleUnknownToken(currentToken);
+        } else if (matchingOpts.size() > 1 && !options.hasLongOption(opt)) {
+            throw new AmbiguousOptionException(opt, matchingOpts);
+        } else {
+            final String key = options.hasLongOption(opt) ? opt : matchingOpts.get(0);
+            final Option option = options.getOption(key);
+            if (option.acceptsArg()) {
+                handleOption(option);
+                currentOption.processValue(stripLeadingAndTrailingQuotesDefaultOff(value));
+                currentOption = null;
+            } else {
+                handleUnknownToken(currentToken);
+            }
+        }
+    }
+    private void handleLongOptionWithoutEqual(final String token) throws ParseException {
+        final List<String> matchingOpts = getMatchingLongOptions(token);
+        if (matchingOpts.isEmpty()) {
+            handleUnknownToken(currentToken);
+        } else if (matchingOpts.size() > 1 && !options.hasLongOption(token)) {
+            throw new AmbiguousOptionException(token, matchingOpts);
+        } else {
+            final String key = options.hasLongOption(token) ? token : matchingOpts.get(0);
+            handleOption(options.getOption(key));
+        }
+    }
+    private void handleOption(final Option option) throws ParseException {
+        checkRequiredArgs();
+        final Option copy = (Option) option.clone();
+        updateRequiredOptions(copy);
+        cmd.addOption(copy);
+        currentOption = copy.hasArg() ? copy : null;
+    }
+    private void handleProperties(final Properties properties) throws ParseException {
+        if (properties == null) {
+            return;
+        }
+        for (final Enumeration<?> e = properties.propertyNames(); e.hasMoreElements();) {
+            final String option = e.nextElement().toString();
+            final Option opt = options.getOption(option);
+            if (opt == null) {
+                throw new UnrecognizedOptionException("Default option wasn't defined", option);
+            }
+            final OptionGroup optionGroup = options.getOptionGroup(opt);
+            final boolean selected = optionGroup != null && optionGroup.isSelected();
+            if (!cmd.hasOption(option) && !selected) {
+                final String value = properties.getProperty(option);
+                if (opt.hasArg()) {
+                    if (opt.isValuesEmpty()) {
+                        opt.processValue(stripLeadingAndTrailingQuotesDefaultOff(value));
+                    }
+                } else if (!("yes".equalsIgnoreCase(value) || "true".equalsIgnoreCase(value) || "1".equalsIgnoreCase(value))) {
+                    continue;
+                }
+                handleOption(opt);
+                currentOption = null;
+            }
+        }
+    }
+    private void handleShortAndLongOption(final String hyphenToken) throws ParseException {
+        final String token = Util.stripLeadingHyphens(hyphenToken);
+        final int pos = indexOfEqual(token);
+        if (token.length() == 1) {
+            if (options.hasShortOption(token)) {
+                handleOption(options.getOption(token));
+            } else {
+                handleUnknownToken(hyphenToken);
+            }
+        } else if (pos == -1) {
+            if (options.hasShortOption(token)) {
+                handleOption(options.getOption(token));
+            } else if (!getMatchingLongOptions(token).isEmpty()) {
+                handleLongOptionWithoutEqual(hyphenToken);
+            } else {
+                final String opt = getLongPrefix(token);
+                if (opt != null && options.getOption(opt).acceptsArg()) {
+                    handleOption(options.getOption(opt));
+                    currentOption.processValue(stripLeadingAndTrailingQuotesDefaultOff(token.substring(opt.length())));
+                    currentOption = null;
+                } else if (isJavaProperty(token)) {
+                    handleOption(options.getOption(token.substring(0, 1)));
+                    currentOption.processValue(stripLeadingAndTrailingQuotesDefaultOff(token.substring(1)));
+                    currentOption = null;
+                } else {
+                    handleConcatenatedOptions(hyphenToken);
+                }
+            }
+        } else {
+            final String opt = token.substring(0, pos);
+            final String value = token.substring(pos + 1);
+            if (opt.length() == 1) {
+                final Option option = options.getOption(opt);
+                if (option != null && option.acceptsArg()) {
+                    handleOption(option);
+                    currentOption.processValue(value);
+                    currentOption = null;
+                } else {
+                    handleUnknownToken(hyphenToken);
+                }
+            } else if (isJavaProperty(opt)) {
+                handleOption(options.getOption(opt.substring(0, 1)));
+                currentOption.processValue(opt.substring(1));
+                currentOption.processValue(value);
+                currentOption = null;
+            } else {
+                handleLongOptionWithEqual(hyphenToken);
+            }
+        }
+    }
+    private void handleToken(final String token) throws ParseException {
+        if (token != null) {
+            currentToken = token;
+            if (skipParsing) {
+                addArg(token);
+            } else if (OptionFormatter.DEFAULT_LONG_OPT_PREFIX.equals(token)) {
+                skipParsing = true;
+            } else if (currentOption != null && currentOption.acceptsArg() && isArgument(token)) {
+                currentOption.processValue(stripLeadingAndTrailingQuotesDefaultOn(token));
+            } else if (token.startsWith(OptionFormatter.DEFAULT_LONG_OPT_PREFIX)) {
+                handleLongOption(token);
+            } else if (token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX) && !OptionFormatter.DEFAULT_OPT_PREFIX.equals(token)) {
+                handleShortAndLongOption(token);
+            } else {
+                handleUnknownToken(token);
+            }
+            if (currentOption != null && !currentOption.acceptsArg()) {
+                currentOption = null;
+            }
+        }
+    }
+    protected void handleUnknownToken(final String token) throws ParseException {
+        if (token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX) && token.length() > 1 && nonOptionAction == NonOptionAction.THROW) {
+            throw new UnrecognizedOptionException("Unrecognized option: " + token, token);
+        }
+        if (!token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX) || token.equals(OptionFormatter.DEFAULT_OPT_PREFIX)
+                || token.length() > 1 && nonOptionAction != NonOptionAction.IGNORE) {
+            addArg(token);
+        }
+        if (nonOptionAction == NonOptionAction.STOP) {
+            skipParsing = true;
+        }
+    }
+    private boolean isArgument(final String token) {
+        return !isOption(token) || isNegativeNumber(token);
+    }
+    private boolean isJavaProperty(final String token) {
+        final String opt = token.isEmpty() ? null : token.substring(0, 1);
+        final Option option = options.getOption(opt);
+        return option != null && (option.getArgs() >= 2 || option.getArgs() == Option.UNLIMITED_VALUES);
+    }
+    private boolean isLongOption(final String token) {
+        if (token == null || !token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX) || token.length() == 1) {
+            return false;
+        }
+        final int pos = indexOfEqual(token);
+        final String t = pos == -1 ? token : token.substring(0, pos);
+        if (!getMatchingLongOptions(t).isEmpty()) {
+            return true;
+        }
+        if (getLongPrefix(token) != null && !token.startsWith(OptionFormatter.DEFAULT_LONG_OPT_PREFIX)) {
+            return true;
+        }
+        return false;
+    }
+    private boolean isNegativeNumber(final String token) {
+        try {
+            Double.parseDouble(token);
+            return true;
+        } catch (final NumberFormatException e) {
+            return false;
+        }
+    }
+    private boolean isOption(final String token) {
+        return isLongOption(token) || isShortOption(token);
+    }
+    private boolean isShortOption(final String token) {
+        if (token == null || !token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX) || token.length() == 1) {
+            return false;
+        }
+        final int pos = indexOfEqual(token);
+        final String optName = pos == -1 ? token.substring(1) : token.substring(1, pos);
+        if (options.hasShortOption(optName)) {
+            return true;
+        }
+        return !optName.isEmpty() && options.hasShortOption(String.valueOf(optName.charAt(0)));
+    }
+    public CommandLine parse(final Options options, final Properties properties, final NonOptionAction nonOptionAction, final String... arguments)
+            throws ParseException {
+        this.options = Objects.requireNonNull(options, "options");
+        this.nonOptionAction = nonOptionAction;
+        skipParsing = false;
+        currentOption = null;
+        expectedOpts = new ArrayList<>(options.getRequiredOptions());
+        for (final OptionGroup optionGroup : options.getOptionGroups()) {
+            optionGroup.setSelected(null);
+        }
+        cmd = CommandLine.builder().setDeprecatedHandler(deprecatedHandler).get();
+        if (arguments != null) {
+            for (final String argument : arguments) {
+                handleToken(argument);
+            }
+        }
+        checkRequiredArgs();
+        handleProperties(properties);
+        checkRequiredOptions();
+        return cmd;
+    }
+    @Override
+    public CommandLine parse(final Options options, final String[] arguments) throws ParseException {
+        return parse(options, arguments, null);
+    }
+    @Override
+    public CommandLine parse(final Options options, final String[] arguments, final boolean stopAtNonOption) throws ParseException {
+        return parse(options, arguments, null, stopAtNonOption);
+    }
+    public CommandLine parse(final Options options, final String[] arguments, final Properties properties) throws ParseException {
+        return parse(options, arguments, properties, false);
+    }
+    public CommandLine parse(final Options options, final String[] arguments, final Properties properties, final boolean stopAtNonOption)
+            throws ParseException {
+        return parse(options, properties, stopAtNonOption ? NonOptionAction.STOP : NonOptionAction.THROW, arguments);
+    }
+    private String stripLeadingAndTrailingQuotesDefaultOff(final String token) {
+        if (stripLeadingAndTrailingQuotes != null && stripLeadingAndTrailingQuotes) {
+            return Util.stripLeadingAndTrailingQuotes(token);
+        }
+        return token;
+    }
+    private String stripLeadingAndTrailingQuotesDefaultOn(final String token) {
+        if (stripLeadingAndTrailingQuotes == null || stripLeadingAndTrailingQuotes) {
+            return Util.stripLeadingAndTrailingQuotes(token);
+        }
+        return token;
+    }
+    private void updateRequiredOptions(final Option option) throws AlreadySelectedException {
+        if (option.isRequired()) {
+            expectedOpts.remove(option.getKey());
+        }
+        if (options.getOptionGroup(option) != null) {
+            final OptionGroup optionGroup = options.getOptionGroup(option);
+            if (optionGroup.isRequired()) {
+                expectedOpts.remove(optionGroup);
+            }
+            optionGroup.setSelected(option);
+        }
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/DeprecatedAttributes.java =====
+package org.apache.commons.cli;
+import java.util.function.Supplier;
+public final class DeprecatedAttributes {
+    public static class Builder implements Supplier<DeprecatedAttributes> {
+        private String description;
+        private boolean forRemoval;
+        private String since;
+        @Deprecated
+        public Builder() {
+        }
+        @Override
+        public DeprecatedAttributes get() {
+            return new DeprecatedAttributes(description, since, forRemoval);
+        }
+        public Builder setDescription(final String description) {
+            this.description = description;
+            return this;
+        }
+        public Builder setForRemoval(final boolean forRemoval) {
+            this.forRemoval = forRemoval;
+            return this;
+        }
+        public Builder setSince(final String since) {
+            this.since = since;
+            return this;
+        }
+    }
+    static final DeprecatedAttributes DEFAULT = new DeprecatedAttributes("", "", false);
+    private static final String EMPTY_STRING = "";
+    public static Builder builder() {
+        return new Builder();
+    }
+    private final String description;
+    private final boolean forRemoval;
+    private final String since;
+    private DeprecatedAttributes(final String description, final String since, final boolean forRemoval) {
+        this.description = toEmpty(description);
+        this.since = toEmpty(since);
+        this.forRemoval = forRemoval;
+    }
+    public String getDescription() {
+        return description;
+    }
+    public String getSince() {
+        return since;
+    }
+    public boolean isForRemoval() {
+        return forRemoval;
+    }
+    private String toEmpty(final String since) {
+        return since != null ? since : EMPTY_STRING;
+    }
+    @Override
+    public String toString() {
+        final StringBuilder builder = new StringBuilder("Deprecated");
+        if (forRemoval) {
+            builder.append(" for removal");
+        }
+        if (!since.isEmpty()) {
+            builder.append(" since ");
+            builder.append(since);
+        }
+        if (!description.isEmpty()) {
+            builder.append(": ");
+            builder.append(description);
+        }
+        return builder.toString();
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/GnuParser.java =====
+package org.apache.commons.cli;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.commons.cli.help.OptionFormatter;
+@Deprecated
+public class GnuParser extends Parser {
+    public GnuParser() {
+    }
+    @Override
+    protected String[] flatten(final Options options, final String[] arguments, final boolean stopAtNonOption) {
+        final List<String> tokens = new ArrayList<>();
+        boolean eatTheRest = false;
+        for (int i = 0; i < arguments.length; i++) {
+            final String arg = arguments[i];
+            if (arg != null) {
+                if (OptionFormatter.DEFAULT_LONG_OPT_PREFIX.equals(arg)) {
+                    eatTheRest = true;
+                    tokens.add(OptionFormatter.DEFAULT_LONG_OPT_PREFIX);
+                } else if (OptionFormatter.DEFAULT_OPT_PREFIX.equals(arg)) {
+                    tokens.add(OptionFormatter.DEFAULT_OPT_PREFIX);
+                } else if (arg.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX)) {
+                    final String opt = Util.stripLeadingHyphens(arg);
+                    if (options.hasOption(opt)) {
+                        tokens.add(arg);
+                    } else {
+                        final int equalPos = DefaultParser.indexOfEqual(opt);
+                        if (equalPos != -1 && options.hasOption(opt.substring(0, equalPos))) {
+                            tokens.add(arg.substring(0, arg.indexOf(Char.EQUAL)));
+                            tokens.add(arg.substring(arg.indexOf(Char.EQUAL) + 1));
+                        } else if (options.hasOption(arg.substring(0, 2))) {
+                            tokens.add(arg.substring(0, 2));
+                            tokens.add(arg.substring(2));
+                        } else {
+                            eatTheRest = stopAtNonOption;
+                            tokens.add(arg);
+                        }
+                    }
+                } else {
+                    tokens.add(arg);
+                }
+                if (eatTheRest) {
+                    for (i++; i < arguments.length; i++) {
+                        tokens.add(arguments[i]);
+                    }
+                }
+            }
+        }
+        return tokens.toArray(Util.EMPTY_STRING_ARRAY);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/HelpFormatter.java =====
+package org.apache.commons.cli;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.Serializable;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import org.apache.commons.cli.help.AbstractHelpFormatter;
+import org.apache.commons.cli.help.OptionFormatter;
+@Deprecated
+public class HelpFormatter {
+    public static class Builder implements Supplier<HelpFormatter> {
+        private static final Function<Option, String> DEFAULT_DEPRECATED_FORMAT = o -> "[Deprecated] " + getDescription(o);
+        private Function<Option, String> deprecatedFormatFunction = DEFAULT_DEPRECATED_FORMAT;
+        private PrintWriter printStream = createDefaultPrintWriter();
+        private boolean showSince;
+        public Builder() {
+        }
+        @Override
+        public HelpFormatter get() {
+            return new HelpFormatter(deprecatedFormatFunction, printStream, showSince);
+        }
+        public Builder setPrintWriter(final PrintWriter printWriter) {
+            this.printStream = Objects.requireNonNull(printWriter, "printWriter");
+            return this;
+        }
+        public Builder setShowDeprecated(final boolean useDefaultFormat) {
+            return setShowDeprecated(useDefaultFormat ? DEFAULT_DEPRECATED_FORMAT : null);
+        }
+        public Builder setShowDeprecated(final Function<Option, String> deprecatedFormatFunction) {
+            this.deprecatedFormatFunction = deprecatedFormatFunction;
+            return this;
+        }
+        public Builder setShowSince(final boolean showSince) {
+            this.showSince = showSince;
+            return this;
+        }
+    }
+    private static final class OptionComparator implements Comparator<Option>, Serializable {
+        private static final long serialVersionUID = 5305467873966684014L;
+        @Override
+        public int compare(final Option opt1, final Option opt2) {
+            return opt1.getKey().compareToIgnoreCase(opt2.getKey());
+        }
+    }
+    private static final String HEADER_OPTIONS = "Options";
+    private static final String HEADER_SINCE = "Since";
+    private static final String HEADER_DESCRIPTION = "Description";
+    public static final int DEFAULT_WIDTH = 74;
+    public static final int DEFAULT_LEFT_PAD = 1;
+    public static final int DEFAULT_DESC_PAD = 3;
+    public static final String DEFAULT_SYNTAX_PREFIX = "usage: ";
+    public static final String DEFAULT_OPT_PREFIX = OptionFormatter.DEFAULT_OPT_PREFIX;
+    public static final String DEFAULT_LONG_OPT_PREFIX = OptionFormatter.DEFAULT_LONG_OPT_PREFIX;
+    public static final String DEFAULT_LONG_OPT_SEPARATOR = " ";
+    public static final String DEFAULT_ARG_NAME = "arg";
+    public static Builder builder() {
+        return new Builder();
+    }
+    private static PrintWriter createDefaultPrintWriter() {
+        return new PrintWriter(System.out);
+    }
+    public static String getDescription(final Option option) {
+        final String desc = option.getDescription();
+        return desc == null ? "" : desc;
+    }
+    @Deprecated
+    public int defaultWidth = DEFAULT_WIDTH;
+    @Deprecated
+    public int defaultLeftPad = DEFAULT_LEFT_PAD;
+    @Deprecated
+    public int defaultDescPad = DEFAULT_DESC_PAD;
+    @Deprecated
+    public String defaultSyntaxPrefix = DEFAULT_SYNTAX_PREFIX;
+    @Deprecated
+    public String defaultNewLine = System.lineSeparator();
+    @Deprecated
+    public String defaultOptPrefix = DEFAULT_OPT_PREFIX;
+    @Deprecated
+    public String defaultLongOptPrefix = DEFAULT_LONG_OPT_PREFIX;
+    @Deprecated
+    public String defaultArgName = DEFAULT_ARG_NAME;
+    protected Comparator<Option> optionComparator = new OptionComparator();
+    private final Function<Option, String> deprecatedFormatFunction;
+    private final PrintWriter printWriter;
+    private final boolean showSince;
+    private String longOptSeparator = DEFAULT_LONG_OPT_SEPARATOR;
+    public HelpFormatter() {
+        this(null, createDefaultPrintWriter(), false);
+    }
+    private HelpFormatter(final Function<Option, String> deprecatedFormatFunction, final PrintWriter printWriter, final boolean showSince) {
+        this.deprecatedFormatFunction = deprecatedFormatFunction;
+        this.printWriter = printWriter;
+        this.showSince = showSince;
+    }
+    private void appendOption(final StringBuilder buff, final Option option, final boolean required) {
+        if (!required) {
+            buff.append("[");
+        }
+        if (option.getOpt() != null) {
+            buff.append(OptionFormatter.DEFAULT_OPT_PREFIX).append(option.getOpt());
+        } else {
+            buff.append(OptionFormatter.DEFAULT_LONG_OPT_PREFIX).append(option.getLongOpt());
+        }
+        if (option.hasArg() && (option.getArgName() == null || !option.getArgName().isEmpty())) {
+            buff.append(option.getOpt() == null ? longOptSeparator : " ");
+            buff.append("<").append(option.getArgName() != null ? option.getArgName() : getArgName()).append(">");
+        }
+        if (!required) {
+            buff.append("]");
+        }
+    }
+    private void appendOptionGroup(final StringBuilder buff, final OptionGroup optionGroup) {
+        if (!optionGroup.isRequired()) {
+            buff.append("[");
+        }
+        final List<Option> optList = new ArrayList<>(optionGroup.getOptions());
+        if (getOptionComparator() != null) {
+            Collections.sort(optList, getOptionComparator());
+        }
+        for (final Iterator<Option> it = optList.iterator(); it.hasNext();) {
+            appendOption(buff, it.next(), true);
+            if (it.hasNext()) {
+                buff.append(AbstractHelpFormatter.DEFAULT_OPTION_GROUP_SEPARATOR);
+            }
+        }
+        if (!optionGroup.isRequired()) {
+            buff.append("]");
+        }
+    }
+    <A extends Appendable> A appendOptions(final A sb, final int width, final Options options, final int leftPad, final int descPad) throws IOException {
+        final String lpad = createPadding(leftPad);
+        final String dpad = createPadding(descPad);
+        int max = 0;
+        final int maxSince = showSince ? determineMaxSinceLength(options) + leftPad : 0;
+        final List<StringBuilder> prefixList = new ArrayList<>();
+        final List<Option> optList = options.helpOptions();
+        if (getOptionComparator() != null) {
+            Collections.sort(optList, getOptionComparator());
+        }
+        for (final Option option : optList) {
+            final StringBuilder optBuf = new StringBuilder();
+            if (option.getOpt() == null) {
+                optBuf.append(lpad).append("   ").append(getLongOptPrefix()).append(option.getLongOpt());
+            } else {
+                optBuf.append(lpad).append(getOptPrefix()).append(option.getOpt());
+                if (option.hasLongOpt()) {
+                    optBuf.append(',').append(getLongOptPrefix()).append(option.getLongOpt());
+                }
+            }
+            if (option.hasArg()) {
+                final String argName = option.getArgName();
+                if (argName != null && argName.isEmpty()) {
+                    optBuf.append(' ');
+                } else {
+                    optBuf.append(option.hasLongOpt() ? longOptSeparator : " ");
+                    optBuf.append("<").append(argName != null ? option.getArgName() : getArgName()).append(">");
+                }
+            }
+            prefixList.add(optBuf);
+            max = Math.max(optBuf.length() + maxSince, max);
+        }
+        final int nextLineTabStop = max + descPad;
+        if (showSince) {
+            final StringBuilder optHeader = new StringBuilder(HEADER_OPTIONS).append(createPadding(max - maxSince - HEADER_OPTIONS.length() + leftPad))
+                    .append(HEADER_SINCE);
+            optHeader.append(createPadding(max - optHeader.length())).append(lpad).append(HEADER_DESCRIPTION);
+            appendWrappedText(sb, width, nextLineTabStop, optHeader.toString());
+            sb.append(getNewLine());
+        }
+        int x = 0;
+        for (final Iterator<Option> it = optList.iterator(); it.hasNext();) {
+            final Option option = it.next();
+            final StringBuilder optBuf = new StringBuilder(prefixList.get(x++).toString());
+            if (optBuf.length() < max) {
+                optBuf.append(createPadding(max - maxSince - optBuf.length()));
+                if (showSince) {
+                    optBuf.append(lpad).append(option.getSince() == null ? OptionFormatter.DEFAULT_OPT_PREFIX : option.getSince());
+                }
+                optBuf.append(createPadding(max - optBuf.length()));
+            }
+            optBuf.append(dpad);
+            if (deprecatedFormatFunction != null && option.isDeprecated()) {
+                optBuf.append(deprecatedFormatFunction.apply(option).trim());
+            } else if (option.getDescription() != null) {
+                optBuf.append(option.getDescription());
+            }
+            appendWrappedText(sb, width, nextLineTabStop, optBuf.toString());
+            if (it.hasNext()) {
+                sb.append(getNewLine());
+            }
+        }
+        return sb;
+    }
+    <A extends Appendable> A appendWrappedText(final A appendable, final int width, final int nextLineTabStop, final String text) throws IOException {
+        if (width <= 0) {
+            return appendable;
+        }
+        String render = text;
+        int nextLineTabStopPos = nextLineTabStop;
+        int pos = findWrapPos(render, width, 0);
+        if (pos == -1) {
+            appendable.append(rtrim(render));
+            return appendable;
+        }
+        appendable.append(rtrim(render.substring(0, pos))).append(getNewLine());
+        if (nextLineTabStopPos >= width) {
+            nextLineTabStopPos = 1;
+        }
+        final String padding = createPadding(nextLineTabStopPos);
+        while (true) {
+            render = padding + render.substring(pos).trim();
+            pos = findWrapPos(render, width, 0);
+            if (pos == -1) {
+                appendable.append(render);
+                return appendable;
+            }
+            if (render.length() > width && pos == nextLineTabStopPos - 1) {
+                pos = width;
+            }
+            appendable.append(rtrim(render.substring(0, pos))).append(getNewLine());
+        }
+    }
+    protected String createPadding(final int len) {
+        final char[] padding = new char[len];
+        Arrays.fill(padding, ' ');
+        return new String(padding);
+    }
+    private int determineMaxSinceLength(final Options options) {
+        final int minLen = HEADER_SINCE.length();
+        final int len = options.getOptions().stream().map(o -> o.getSince() == null ? minLen : o.getSince().length()).max(Integer::compareTo).orElse(minLen);
+        return len < minLen ? minLen : len;
+    }
+    protected int findWrapPos(final String text, final int width, final int startPos) {
+        int pos = text.indexOf(Char.LF, startPos);
+        if (pos != -1 && pos <= width) {
+            return pos + 1;
+        }
+        pos = text.indexOf(Char.TAB, startPos);
+        if (pos != -1 && pos <= width) {
+            return pos + 1;
+        }
+        if (startPos + width >= text.length()) {
+            return -1;
+        }
+        for (pos = startPos + width; pos >= startPos; --pos) {
+            final char c = text.charAt(pos);
+            if (c == Char.SP || c == Char.LF || c == Char.CR) {
+                break;
+            }
+        }
+        if (pos > startPos) {
+            return pos;
+        }
+        pos = startPos + width;
+        return pos == text.length() ? -1 : pos;
+    }
+    public String getArgName() {
+        return defaultArgName;
+    }
+    public int getDescPadding() {
+        return defaultDescPad;
+    }
+    public int getLeftPadding() {
+        return defaultLeftPad;
+    }
+    public String getLongOptPrefix() {
+        return defaultLongOptPrefix;
+    }
+    public String getLongOptSeparator() {
+        return longOptSeparator;
+    }
+    public String getNewLine() {
+        return defaultNewLine;
+    }
+    public Comparator<Option> getOptionComparator() {
+        return optionComparator;
+    }
+    public String getOptPrefix() {
+        return defaultOptPrefix;
+    }
+    public String getSyntaxPrefix() {
+        return defaultSyntaxPrefix;
+    }
+    public int getWidth() {
+        return defaultWidth;
+    }
+    public void printHelp(final int width, final String cmdLineSyntax, final String header, final Options options, final String footer) {
+        printHelp(width, cmdLineSyntax, header, options, footer, false);
+    }
+    public void printHelp(final int width, final String cmdLineSyntax, final String header, final Options options, final String footer,
+        final boolean autoUsage) {
+        final PrintWriter pw = new PrintWriter(printWriter);
+        printHelp(pw, width, cmdLineSyntax, header, options, getLeftPadding(), getDescPadding(), footer, autoUsage);
+        pw.flush();
+    }
+    public void printHelp(final PrintWriter pw, final int width, final String cmdLineSyntax, final String header, final Options options, final int leftPad,
+        final int descPad, final String footer) {
+        printHelp(pw, width, cmdLineSyntax, header, options, leftPad, descPad, footer, false);
+    }
+    public void printHelp(final PrintWriter pw, final int width, final String cmdLineSyntax, final String header, final Options options, final int leftPad,
+        final int descPad, final String footer, final boolean autoUsage) {
+        if (Util.isEmpty(cmdLineSyntax)) {
+            throw new IllegalArgumentException("cmdLineSyntax not provided");
+        }
+        if (autoUsage) {
+            printUsage(pw, width, cmdLineSyntax, options);
+        } else {
+            printUsage(pw, width, cmdLineSyntax);
+        }
+        if (header != null && !header.isEmpty()) {
+            printWrapped(pw, width, header);
+        }
+        printOptions(pw, width, options, leftPad, descPad);
+        if (footer != null && !footer.isEmpty()) {
+            printWrapped(pw, width, footer);
+        }
+    }
+    public void printHelp(final String cmdLineSyntax, final Options options) {
+        printHelp(getWidth(), cmdLineSyntax, null, options, null, false);
+    }
+    public void printHelp(final String cmdLineSyntax, final Options options, final boolean autoUsage) {
+        printHelp(getWidth(), cmdLineSyntax, null, options, null, autoUsage);
+    }
+    public void printHelp(final String cmdLineSyntax, final String header, final Options options, final String footer) {
+        printHelp(cmdLineSyntax, header, options, footer, false);
+    }
+    public void printHelp(final String cmdLineSyntax, final String header, final Options options, final String footer, final boolean autoUsage) {
+        printHelp(getWidth(), cmdLineSyntax, header, options, footer, autoUsage);
+    }
+    public void printOptions(final PrintWriter pw, final int width, final Options options, final int leftPad, final int descPad) {
+        try {
+            pw.println(appendOptions(new StringBuilder(), width, options, leftPad, descPad));
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+    public void printUsage(final PrintWriter pw, final int width, final String cmdLineSyntax) {
+        final int argPos = cmdLineSyntax.indexOf(' ') + 1;
+        printWrapped(pw, width, getSyntaxPrefix().length() + argPos, getSyntaxPrefix() + cmdLineSyntax);
+    }
+    public void printUsage(final PrintWriter pw, final int width, final String app, final Options options) {
+        final StringBuilder buff = new StringBuilder(getSyntaxPrefix()).append(app).append(Char.SP);
+        final Collection<OptionGroup> processedGroups = new ArrayList<>();
+        final List<Option> optList = new ArrayList<>(options.getOptions());
+        if (getOptionComparator() != null) {
+            Collections.sort(optList, getOptionComparator());
+        }
+        for (final Iterator<Option> it = optList.iterator(); it.hasNext();) {
+            final Option option = it.next();
+            final OptionGroup group = options.getOptionGroup(option);
+            if (group != null) {
+                if (!processedGroups.contains(group)) {
+                    processedGroups.add(group);
+                    appendOptionGroup(buff, group);
+                }
+            }
+            else {
+                appendOption(buff, option, option.isRequired());
+            }
+            if (it.hasNext()) {
+                buff.append(Char.SP);
+            }
+        }
+        printWrapped(pw, width, buff.toString().indexOf(' ') + 1, buff.toString());
+    }
+    public void printWrapped(final PrintWriter pw, final int width, final int nextLineTabStop, final String text) {
+        pw.println(renderWrappedTextBlock(new StringBuilder(text.length()), width, nextLineTabStop, text));
+    }
+    public void printWrapped(final PrintWriter pw, final int width, final String text) {
+        printWrapped(pw, width, 0, text);
+    }
+    protected StringBuffer renderOptions(final StringBuffer sb, final int width, final Options options, final int leftPad, final int descPad) {
+        try {
+            return appendOptions(sb, width, options, leftPad, descPad);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+    protected StringBuffer renderWrappedText(final StringBuffer sb, final int width, final int nextLineTabStop, final String text) {
+        try {
+            return appendWrappedText(sb, width, nextLineTabStop, text);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+    private <A extends Appendable> A renderWrappedTextBlock(final A appendable, final int width, final int nextLineTabStop, final String text) {
+        try {
+            final BufferedReader in = new BufferedReader(new StringReader(text));
+            String line;
+            boolean firstLine = true;
+            while ((line = in.readLine()) != null) {
+                if (!firstLine) {
+                    appendable.append(getNewLine());
+                } else {
+                    firstLine = false;
+                }
+                appendWrappedText(appendable, width, nextLineTabStop, line);
+            }
+        } catch (final IOException e) {
+        }
+        return appendable;
+    }
+    protected String rtrim(final String s) {
+        if (Util.isEmpty(s)) {
+            return s;
+        }
+        int pos = s.length();
+        while (pos > 0 && Character.isWhitespace(s.charAt(pos - 1))) {
+            --pos;
+        }
+        return s.substring(0, pos);
+    }
+    public void setArgName(final String name) {
+        this.defaultArgName = name;
+    }
+    public void setDescPadding(final int padding) {
+        this.defaultDescPad = padding;
+    }
+    public void setLeftPadding(final int padding) {
+        this.defaultLeftPad = padding;
+    }
+    public void setLongOptPrefix(final String prefix) {
+        this.defaultLongOptPrefix = prefix;
+    }
+    public void setLongOptSeparator(final String longOptSeparator) {
+        this.longOptSeparator = longOptSeparator;
+    }
+    public void setNewLine(final String newline) {
+        this.defaultNewLine = newline;
+    }
+    public void setOptionComparator(final Comparator<Option> comparator) {
+        this.optionComparator = comparator;
+    }
+    public void setOptPrefix(final String prefix) {
+        this.defaultOptPrefix = prefix;
+    }
+    public void setSyntaxPrefix(final String prefix) {
+        this.defaultSyntaxPrefix = prefix;
+    }
+    public void setWidth(final int width) {
+        this.defaultWidth = width;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/MissingArgumentException.java =====
+package org.apache.commons.cli;
+public class MissingArgumentException extends ParseException {
+    private static final long serialVersionUID = -7098538588704965017L;
+    private Option option;
+    public MissingArgumentException(final Option option) {
+        this("Missing argument for option: " + option.getKey());
+        this.option = option;
+    }
+    public MissingArgumentException(final String message) {
+        super(message);
+    }
+    public Option getOption() {
+        return option;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/MissingOptionException.java =====
+package org.apache.commons.cli;
+import java.util.List;
+public class MissingOptionException extends ParseException {
+    private static final long serialVersionUID = 8161889051578563249L;
+    private static String createMessage(final List<?> missingOptions) {
+        final StringBuilder buf = new StringBuilder("Missing required option");
+        buf.append(missingOptions.size() == 1 ? "" : "s").append(": ");
+        final String string = missingOptions.toString();
+        return buf.append(string.substring(1, string.length() - 1)).toString();
+    }
+    private List missingOptions;
+    public MissingOptionException(final List missingOptions) {
+        this(createMessage(missingOptions));
+        this.missingOptions = missingOptions;
+    }
+    public MissingOptionException(final String message) {
+        super(message);
+    }
+    public List getMissingOptions() {
+        return missingOptions;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/Option.java =====
+package org.apache.commons.cli;
+import static org.apache.commons.cli.Util.EMPTY_STRING_ARRAY;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Supplier;
+public class Option implements Cloneable, Serializable {
+    public static final class Builder implements Supplier<Option> {
+        private static final Class<String> DEFAULT_TYPE = String.class;
+        private static Class<?> toType(final Class<?> type) {
+            return type != null ? type : DEFAULT_TYPE;
+        }
+        private int argCount = UNINITIALIZED;
+        private String argName;
+        private Converter<?, ?> converter;
+        private DeprecatedAttributes deprecated;
+        private String description;
+        private String longOption;
+        private String option;
+        private boolean optionalArg;
+        private boolean required;
+        private String since;
+        private Class<?> type = DEFAULT_TYPE;
+        private char valueSeparator;
+        private Builder(final String option) throws IllegalArgumentException {
+            option(option);
+        }
+        public Builder argName(final String argName) {
+            this.argName = argName;
+            return this;
+        }
+        @Deprecated
+        public Option build() {
+            return get();
+        }
+        public Builder converter(final Converter<?, ?> converter) {
+            this.converter = converter;
+            return this;
+        }
+        public Builder deprecated() {
+            return deprecated(DeprecatedAttributes.DEFAULT);
+        }
+        public Builder deprecated(final DeprecatedAttributes deprecated) {
+            this.deprecated = deprecated;
+            return this;
+        }
+        public Builder desc(final String description) {
+            this.description = description;
+            return this;
+        }
+        @Override
+        public Option get() {
+            return new Option(this);
+        }
+        public Builder hasArg() {
+            return hasArg(true);
+        }
+        public Builder hasArg(final boolean hasArg) {
+            argCount = hasArg ? 1 : UNINITIALIZED;
+            return this;
+        }
+        public Builder hasArgs() {
+            argCount = UNLIMITED_VALUES;
+            return this;
+        }
+        public Builder longOpt(final String longOption) {
+            this.longOption = longOption;
+            return this;
+        }
+        public Builder numberOfArgs(final int argCount) {
+            this.argCount = argCount;
+            return this;
+        }
+        public Builder option(final String option) throws IllegalArgumentException {
+            this.option = OptionValidator.validate(option);
+            return this;
+        }
+        public Builder optionalArg(final boolean optionalArg) {
+            if (optionalArg && argCount == UNINITIALIZED) {
+                argCount = 1;
+            }
+            this.optionalArg = optionalArg;
+            return this;
+        }
+        public Builder required() {
+            return required(true);
+        }
+        public Builder required(final boolean required) {
+            this.required = required;
+            return this;
+        }
+        public Builder since(final String since) {
+            this.since = since;
+            return this;
+        }
+        public Builder type(final Class<?> type) {
+            this.type = toType(type);
+            return this;
+        }
+        public Builder valueSeparator() {
+            return valueSeparator(Char.EQUAL);
+        }
+        public Builder valueSeparator(final char valueSeparator) {
+            this.valueSeparator = valueSeparator;
+            return this;
+        }
+    }
+    static final Option[] EMPTY_ARRAY = {};
+    private static final long serialVersionUID = 1L;
+    public static final int UNINITIALIZED = -1;
+    public static final int UNLIMITED_VALUES = -2;
+    public static Builder builder() {
+        return builder(null);
+    }
+    public static Builder builder(final String option) {
+        return new Builder(option);
+    }
+    private int argCount = UNINITIALIZED;
+    private String argName;
+    private transient Converter<?, ?> converter;
+    private final transient DeprecatedAttributes deprecated;
+    private String description;
+    private String longOption;
+    private final String option;
+    private boolean optionalArg;
+    private boolean required;
+    private String since;
+    private Class<?> type = String.class;
+    private List<String> values = new ArrayList<>();
+    private char valueSeparator;
+    private Option(final Builder builder) {
+        if (builder.option == null && builder.longOption == null) {
+            throw new IllegalStateException("Either opt or longOpt must be specified");
+        }
+        this.argName = builder.argName;
+        this.description = builder.description;
+        this.longOption = builder.longOption;
+        this.argCount = builder.argCount;
+        this.option = builder.option;
+        this.optionalArg = builder.optionalArg;
+        this.deprecated = builder.deprecated;
+        this.required = builder.required;
+        this.since = builder.since;
+        this.type = builder.type;
+        this.valueSeparator = builder.valueSeparator;
+        this.converter = builder.converter;
+    }
+    public Option(final String option, final boolean hasArg, final String description) throws IllegalArgumentException {
+        this(option, null, hasArg, description);
+    }
+    public Option(final String option, final String description) throws IllegalArgumentException {
+        this(option, null, false, description);
+    }
+    public Option(final String option, final String longOption, final boolean hasArg, final String description) throws IllegalArgumentException {
+        this.deprecated = null;
+        this.option = OptionValidator.validate(option);
+        this.longOption = longOption;
+        if (hasArg) {
+            this.argCount = 1;
+        }
+        this.description = description;
+    }
+    boolean acceptsArg() {
+        return (hasArg() || hasArgs() || hasOptionalArg()) && (argCount <= 0 || values.size() < argCount);
+    }
+    private void add(final String value) {
+        if (!acceptsArg()) {
+            throw new IllegalArgumentException("Cannot add value, list full.");
+        }
+        values.add(value);
+    }
+    @Deprecated
+    public boolean addValue(final String value) {
+        throw new UnsupportedOperationException("The addValue method is not intended for client use. Subclasses should use the processValue method instead.");
+    }
+    void clearValues() {
+        values.clear();
+    }
+    @Override
+    public Object clone() {
+        try {
+            final Option option = (Option) super.clone();
+            option.values = new ArrayList<>(values);
+            return option;
+        } catch (final CloneNotSupportedException e) {
+            throw new UnsupportedOperationException(e.getMessage(), e);
+        }
+    }
+    @Override
+    public boolean equals(final Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Option)) {
+            return false;
+        }
+        final Option other = (Option) obj;
+        return Objects.equals(longOption, other.longOption) && Objects.equals(option, other.option);
+    }
+    public String getArgName() {
+        return argName;
+    }
+    public int getArgs() {
+        return argCount;
+    }
+    public Converter<?, ?> getConverter() {
+        return converter == null ? TypeHandler.getDefault().getConverter(type) : converter;
+    }
+    public DeprecatedAttributes getDeprecated() {
+        return deprecated;
+    }
+    public String getDescription() {
+        return description;
+    }
+    public int getId() {
+        return getKey().charAt(0);
+    }
+    public String getKey() {
+        return option == null ? longOption : option;
+    }
+    public String getLongOpt() {
+        return longOption;
+    }
+    public String getOpt() {
+        return option;
+    }
+    public String getSince() {
+        return since;
+    }
+    public Object getType() {
+        return type;
+    }
+    public String getValue() {
+        return isValuesEmpty() ? null : values.get(0);
+    }
+    public String getValue(final int index) throws IndexOutOfBoundsException {
+        return isValuesEmpty() ? null : values.get(index);
+    }
+    public String getValue(final String defaultValue) {
+        final String value = getValue();
+        return value != null ? value : defaultValue;
+    }
+    public String[] getValues() {
+        return isValuesEmpty() ? null : values.toArray(EMPTY_STRING_ARRAY);
+    }
+    public char getValueSeparator() {
+        return valueSeparator;
+    }
+    public List<String> getValuesList() {
+        return values;
+    }
+    public boolean hasArg() {
+        return argCount > 0 || argCount == UNLIMITED_VALUES;
+    }
+    public boolean hasArgName() {
+        return argName != null && !argName.isEmpty();
+    }
+    public boolean hasArgs() {
+        return argCount > 1 || argCount == UNLIMITED_VALUES;
+    }
+    @Override
+    public int hashCode() {
+        return Objects.hash(longOption, option);
+    }
+    public boolean hasLongOpt() {
+        return longOption != null;
+    }
+    public boolean hasOptionalArg() {
+        return optionalArg;
+    }
+    public boolean hasValueSeparator() {
+        return valueSeparator > 0;
+    }
+    public boolean isDeprecated() {
+        return deprecated != null;
+    }
+    public boolean isRequired() {
+        return required;
+    }
+    boolean isValuesEmpty() {
+        return values.isEmpty();
+    }
+    void processValue(final String value) {
+        if (argCount == UNINITIALIZED) {
+            throw new IllegalStateException("NO_ARGS_ALLOWED");
+        }
+        String add = Objects.requireNonNull(value, "value");
+        if (hasValueSeparator()) {
+            final char sep = getValueSeparator();
+            int index = add.indexOf(sep);
+            while (index != -1) {
+                if (values.size() == argCount - 1) {
+                    break;
+                }
+                add(add.substring(0, index));
+                add = add.substring(index + 1);
+                index = add.indexOf(sep);
+            }
+        }
+        add(add);
+    }
+    boolean requiresArg() {
+        if (optionalArg) {
+            return false;
+        }
+        return argCount == UNLIMITED_VALUES ? values.isEmpty() : acceptsArg();
+    }
+    public void setArgName(final String argName) {
+        this.argName = argName;
+    }
+    public void setArgs(final int num) {
+        this.argCount = num;
+    }
+    public void setConverter(final Converter<?, ?> converter) {
+        this.converter = converter;
+    }
+    public void setDescription(final String description) {
+        this.description = description;
+    }
+    public void setLongOpt(final String longOpt) {
+        this.longOption = longOpt;
+    }
+    public void setOptionalArg(final boolean optionalArg) {
+        this.optionalArg = optionalArg;
+    }
+    public void setRequired(final boolean required) {
+        this.required = required;
+    }
+    public void setType(final Class<?> type) {
+        this.type = Builder.toType(type);
+    }
+    @Deprecated
+    public void setType(final Object type) {
+        setType((Class<?>) type);
+    }
+    public void setValueSeparator(final char valueSeparator) {
+        this.valueSeparator = valueSeparator;
+    }
+    String toDeprecatedString() {
+        if (!isDeprecated()) {
+            return "";
+        }
+        final StringBuilder buf = new StringBuilder()
+                .append("Option '")
+                .append(option)
+                .append(Char.APOS);
+        if (longOption != null) {
+            buf.append(Char.APOS).append(longOption).append(Char.APOS);
+        }
+        buf.append(": ").append(deprecated);
+        return buf.toString();
+    }
+    @Override
+    public String toString() {
+        final StringBuilder buf = new StringBuilder().append("[ ");
+        buf.append("Option ");
+        buf.append(option);
+        if (longOption != null) {
+            buf.append(Char.SP).append(longOption);
+        }
+        if (isDeprecated()) {
+            buf.append(Char.SP);
+            buf.append(deprecated.toString());
+        }
+        if (hasArgs()) {
+            buf.append("[ARG...]");
+        } else if (hasArg()) {
+            buf.append(" [ARG]");
+        }
+        return buf.append(" :: ")
+            .append(description)
+            .append(" :: ")
+            .append(type)
+            .append(" ]")
+            .toString();
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/OptionBuilder.java =====
+package org.apache.commons.cli;
+@Deprecated
+public final class OptionBuilder {
+    private static String longOption;
+    private static String description;
+    private static String argName;
+    private static boolean required;
+    private static int argCount = Option.UNINITIALIZED;
+    private static Class<?> type;
+    private static boolean optionalArg;
+    private static char valueSeparator;
+    private static final OptionBuilder INSTANCE = new OptionBuilder();
+    static {
+        reset();
+    }
+    public static Option create() throws IllegalArgumentException {
+        if (longOption == null) {
+            reset();
+            throw new IllegalStateException("longopt missing");
+        }
+        return create(null);
+    }
+    public static Option create(final char opt) throws IllegalArgumentException {
+        return create(String.valueOf(opt));
+    }
+    public static Option create(final String opt) throws IllegalArgumentException {
+        Option option;
+        try {
+            option = new Option(opt, description);
+            option.setLongOpt(longOption);
+            option.setRequired(required);
+            option.setOptionalArg(optionalArg);
+            option.setArgs(argCount);
+            option.setType(type);
+            option.setConverter(TypeHandler.getDefault().getConverter(type));
+            option.setValueSeparator(valueSeparator);
+            option.setArgName(argName);
+        } finally {
+            reset();
+        }
+        return option;
+    }
+    public static OptionBuilder hasArg() {
+        argCount = 1;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasArg(final boolean hasArg) {
+        argCount = hasArg ? 1 : Option.UNINITIALIZED;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasArgs() {
+        argCount = Option.UNLIMITED_VALUES;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasArgs(final int num) {
+        argCount = num;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasOptionalArg() {
+        argCount = 1;
+        optionalArg = true;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasOptionalArgs() {
+        argCount = Option.UNLIMITED_VALUES;
+        optionalArg = true;
+        return INSTANCE;
+    }
+    public static OptionBuilder hasOptionalArgs(final int numArgs) {
+        argCount = numArgs;
+        optionalArg = true;
+        return INSTANCE;
+    }
+    public static OptionBuilder isRequired() {
+        required = true;
+        return INSTANCE;
+    }
+    public static OptionBuilder isRequired(final boolean newRequired) {
+        required = newRequired;
+        return INSTANCE;
+    }
+    private static void reset() {
+        description = null;
+        argName = null;
+        longOption = null;
+        type = String.class;
+        required = false;
+        argCount = Option.UNINITIALIZED;
+        optionalArg = false;
+        valueSeparator = (char) 0;
+    }
+    public static OptionBuilder withArgName(final String name) {
+        argName = name;
+        return INSTANCE;
+    }
+    public static OptionBuilder withDescription(final String newDescription) {
+        description = newDescription;
+        return INSTANCE;
+    }
+    public static OptionBuilder withLongOpt(final String newLongopt) {
+        longOption = newLongopt;
+        return INSTANCE;
+    }
+    public static OptionBuilder withType(final Class<?> newType) {
+        type = newType;
+        return INSTANCE;
+    }
+    @Deprecated
+    public static OptionBuilder withType(final Object newType) {
+        return withType((Class<?>) newType);
+    }
+    public static OptionBuilder withValueSeparator() {
+        valueSeparator = Char.EQUAL;
+        return INSTANCE;
+    }
+    public static OptionBuilder withValueSeparator(final char sep) {
+        valueSeparator = sep;
+        return INSTANCE;
+    }
+    private OptionBuilder() {
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/OptionGroup.java =====
+package org.apache.commons.cli;
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.apache.commons.cli.help.OptionFormatter;
+public class OptionGroup implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private final Map<String, Option> optionMap = new LinkedHashMap<>();
+    private String selected;
+    private boolean required;
+    public OptionGroup() {
+    }
+    public OptionGroup addOption(final Option option) {
+        optionMap.put(option.getKey(), option);
+        return this;
+    }
+    public Collection<String> getNames() {
+        return optionMap.keySet();
+    }
+    public Collection<Option> getOptions() {
+        return optionMap.values();
+    }
+    public String getSelected() {
+        return selected;
+    }
+    public boolean isRequired() {
+        return required;
+    }
+    public boolean isSelected() {
+        return selected != null;
+    }
+    public void setRequired(final boolean required) {
+        this.required = required;
+    }
+    public void setSelected(final Option option) throws AlreadySelectedException {
+        if (option == null) {
+            selected = null;
+            return;
+        }
+        if (selected != null && !selected.equals(option.getKey())) {
+            throw new AlreadySelectedException(this, option);
+        }
+        selected = option.getKey();
+    }
+    @Override
+    public String toString() {
+        final StringBuilder buff = new StringBuilder();
+        final Iterator<Option> iter = getOptions().iterator();
+        buff.append("[");
+        while (iter.hasNext()) {
+            final Option option = iter.next();
+            if (option.getOpt() != null) {
+                buff.append(OptionFormatter.DEFAULT_OPT_PREFIX);
+                buff.append(option.getOpt());
+            } else {
+                buff.append(OptionFormatter.DEFAULT_LONG_OPT_PREFIX);
+                buff.append(option.getLongOpt());
+            }
+            if (option.getDescription() != null) {
+                buff.append(Char.SP);
+                buff.append(option.getDescription());
+            }
+            if (iter.hasNext()) {
+                buff.append(", ");
+            }
+        }
+        buff.append("]");
+        return buff.toString();
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/OptionValidator.java =====
+package org.apache.commons.cli;
+final class OptionValidator {
+    static final char[] ADDITIONAL_OPTION_CHARS = { '?', '@' };
+    static final char[] ADDITIONAL_LONG_CHARS = { '-' };
+    private static boolean isValidChar(final char c) {
+        return Character.isJavaIdentifierPart(c) || search(ADDITIONAL_LONG_CHARS, c);
+    }
+    private static boolean isValidOpt(final char c) {
+        return Character.isJavaIdentifierPart(c) || search(ADDITIONAL_OPTION_CHARS, c);
+    }
+    private static boolean search(final char[] chars, final char c) {
+        for (final char a : chars) {
+            if (a == c) {
+                return true;
+            }
+        }
+        return false;
+    }
+    static String validate(final String option) throws IllegalArgumentException {
+        if (option == null) {
+            return null;
+        }
+        if (option.isEmpty()) {
+            throw new IllegalArgumentException("Empty option name.");
+        }
+        final char[] chars = option.toCharArray();
+        final char ch0 = chars[0];
+        if (!isValidOpt(ch0)) {
+            throw new IllegalArgumentException(String.format("Illegal option name '%s'.", ch0));
+        }
+        if (option.length() > 1) {
+            for (int i = 1; i < chars.length; i++) {
+                final char ch = chars[i];
+                if (!isValidChar(ch)) {
+                    throw new IllegalArgumentException(String.format("The option '%s' contains an illegal character : '%s'.", option, ch));
+                }
+            }
+        }
+        return option;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/Options.java =====
+package org.apache.commons.cli;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+public class Options implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private final Map<String, Option> shortOpts = new LinkedHashMap<>();
+    private final Map<String, Option> longOpts = new LinkedHashMap<>();
+    private final List<Object> requiredOpts = new ArrayList<>();
+    private final Map<String, OptionGroup> optionGroups = new LinkedHashMap<>();
+    public Options() {
+    }
+    public Options addOption(final Option opt) {
+        final String key = opt.getKey();
+        if (opt.hasLongOpt()) {
+            longOpts.put(opt.getLongOpt(), opt);
+        }
+        if (opt.isRequired()) {
+            if (requiredOpts.contains(key)) {
+                requiredOpts.remove(requiredOpts.indexOf(key));
+            }
+            requiredOpts.add(key);
+        }
+        shortOpts.put(key, opt);
+        return this;
+    }
+    public Options addOption(final String opt, final boolean hasArg, final String description) {
+        addOption(opt, null, hasArg, description);
+        return this;
+    }
+    public Options addOption(final String opt, final String description) {
+        addOption(opt, null, false, description);
+        return this;
+    }
+    public Options addOption(final String opt, final String longOpt, final boolean hasArg, final String description) {
+        addOption(new Option(opt, longOpt, hasArg, description));
+        return this;
+    }
+    public Options addOptionGroup(final OptionGroup optionGroup) {
+        if (optionGroup.isRequired()) {
+            requiredOpts.add(optionGroup);
+        }
+        optionGroup.getOptions().forEach(option -> {
+            option.setRequired(false);
+            final String key = option.getKey();
+            requiredOpts.remove(key);
+            addOption(option);
+            optionGroups.put(key, optionGroup);
+        });
+        return this;
+    }
+    public Options addOptions(final Options options) {
+        options.getOptions().forEach(opt -> {
+            if (hasOption(opt.getKey())) {
+                throw new IllegalArgumentException("Duplicate key: " + opt.getKey());
+            }
+            addOption(opt);
+        });
+        options.getOptionGroups().forEach(this::addOptionGroup);
+        return this;
+    }
+    public Options addRequiredOption(final String opt, final String longOpt, final boolean hasArg, final String description) {
+        final Option option = new Option(opt, longOpt, hasArg, description);
+        option.setRequired(true);
+        addOption(option);
+        return this;
+    }
+    public List<String> getMatchingOptions(final String opt) {
+        final String clean = Util.stripLeadingHyphens(opt);
+        final List<String> matchingOpts = new ArrayList<>();
+        if (Util.isEmpty(clean)) {
+            return matchingOpts;
+        }
+        if (longOpts.containsKey(clean)) {
+            return Collections.singletonList(clean);
+        }
+        return longOpts.keySet().stream().filter(s -> s.startsWith(clean)).collect(Collectors.toList());
+    }
+    public Option getOption(final String opt) {
+        final String clean = Util.stripLeadingHyphens(opt);
+        final Option option = shortOpts.get(clean);
+        return option != null ? option : longOpts.get(clean);
+    }
+    public OptionGroup getOptionGroup(final Option option) {
+        return optionGroups.get(option.getKey());
+    }
+    Collection<OptionGroup> getOptionGroups() {
+        return new HashSet<>(optionGroups.values());
+    }
+    public Collection<Option> getOptions() {
+        return Collections.unmodifiableCollection(helpOptions());
+    }
+    public List<?> getRequiredOptions() {
+        return Collections.unmodifiableList(requiredOpts);
+    }
+    public boolean hasLongOption(final String opt) {
+        return longOpts.containsKey(Util.stripLeadingHyphens(opt));
+    }
+    public boolean hasOption(final String opt) {
+        final String clean = Util.stripLeadingHyphens(opt);
+        return shortOpts.containsKey(clean) || longOpts.containsKey(clean);
+    }
+    public boolean hasShortOption(final String opt) {
+        final String clean = Util.stripLeadingHyphens(opt);
+        return shortOpts.containsKey(clean);
+    }
+    List<Option> helpOptions() {
+        return new ArrayList<>(shortOpts.values());
+    }
+    @Override
+    public String toString() {
+        final StringBuilder buf = new StringBuilder();
+        buf.append("[ Options: [ short ");
+        buf.append(shortOpts.toString());
+        buf.append(" ] [ long ");
+        buf.append(longOpts);
+        buf.append(" ]");
+        return buf.toString();
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/ParseException.java =====
+package org.apache.commons.cli;
+public class ParseException extends Exception {
+    private static final long serialVersionUID = 9112808380089253192L;
+    public static ParseException wrap(final Throwable e) throws UnsupportedOperationException {
+        if (e instanceof UnsupportedOperationException) {
+            throw (UnsupportedOperationException) e;
+        }
+        if (e instanceof ParseException) {
+            return (ParseException) e;
+        }
+        return new ParseException(e);
+    }
+    public ParseException(final String message) {
+        super(message);
+    }
+    public ParseException(final Throwable e) {
+        super(e);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/Parser.java =====
+package org.apache.commons.cli;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Properties;
+import org.apache.commons.cli.help.OptionFormatter;
+@Deprecated
+public abstract class Parser implements CommandLineParser {
+    protected CommandLine cmd;
+    private Options options;
+    private List requiredOptions;
+    public Parser() {
+    }
+    protected void checkRequiredOptions() throws MissingOptionException {
+        if (!getRequiredOptions().isEmpty()) {
+            throw new MissingOptionException(getRequiredOptions());
+        }
+    }
+    protected abstract String[] flatten(Options opts, String[] arguments, boolean stopAtNonOption) throws ParseException;
+    protected Options getOptions() {
+        return options;
+    }
+    protected List getRequiredOptions() {
+        return requiredOptions;
+    }
+    @Override
+    public CommandLine parse(final Options options, final String[] arguments) throws ParseException {
+        return parse(options, arguments, null, false);
+    }
+    @Override
+    public CommandLine parse(final Options options, final String[] arguments, final boolean stopAtNonOption) throws ParseException {
+        return parse(options, arguments, null, stopAtNonOption);
+    }
+    public CommandLine parse(final Options options, final String[] arguments, final Properties properties) throws ParseException {
+        return parse(options, arguments, properties, false);
+    }
+    public CommandLine parse(final Options options, final String[] arguments, final Properties properties, final boolean stopAtNonOption)
+            throws ParseException {
+        options.helpOptions().forEach(Option::clearValues);
+        for (final OptionGroup optionGroup : options.getOptionGroups()) {
+            optionGroup.setSelected(null);
+        }
+        setOptions(options);
+        cmd = CommandLine.builder().get();
+        boolean eatTheRest = false;
+        final List<String> tokenList = Arrays.asList(flatten(getOptions(), arguments == null ? Util.EMPTY_STRING_ARRAY : arguments, stopAtNonOption));
+        final ListIterator<String> iterator = tokenList.listIterator();
+        while (iterator.hasNext()) {
+            final String token = iterator.next();
+            if (token != null) {
+                if (OptionFormatter.DEFAULT_LONG_OPT_PREFIX.equals(token)) {
+                    eatTheRest = true;
+                } else if (OptionFormatter.DEFAULT_OPT_PREFIX.equals(token)) {
+                    if (stopAtNonOption) {
+                        eatTheRest = true;
+                    } else {
+                        cmd.addArg(token);
+                    }
+                } else if (token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX)) {
+                    if (stopAtNonOption && !getOptions().hasOption(token)) {
+                        eatTheRest = true;
+                        cmd.addArg(token);
+                    } else {
+                        processOption(token, iterator);
+                    }
+                } else {
+                    cmd.addArg(token);
+                    if (stopAtNonOption) {
+                        eatTheRest = true;
+                    }
+                }
+                if (eatTheRest) {
+                    iterator.forEachRemaining(str -> {
+                        if (!OptionFormatter.DEFAULT_LONG_OPT_PREFIX.equals(str)) {
+                            cmd.addArg(str);
+                        }
+                    });
+                }
+            }
+        }
+        processProperties(properties);
+        checkRequiredOptions();
+        return cmd;
+    }
+    public void processArgs(final Option opt, final ListIterator<String> iter) throws ParseException {
+        while (iter.hasNext()) {
+            final String str = iter.next();
+            if (getOptions().hasOption(str) && str.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX)) {
+                iter.previous();
+                break;
+            }
+            try {
+                opt.processValue(Util.stripLeadingAndTrailingQuotes(str));
+            } catch (final RuntimeException exp) {
+                iter.previous();
+                break;
+            }
+        }
+        if (opt.isValuesEmpty() && !opt.hasOptionalArg()) {
+            throw new MissingArgumentException(opt);
+        }
+    }
+    protected void processOption(final String arg, final ListIterator<String> iter) throws ParseException {
+        final boolean hasOption = getOptions().hasOption(arg);
+        if (!hasOption) {
+            throw new UnrecognizedOptionException("Unrecognized option: " + arg, arg);
+        }
+        final Option opt = (Option) getOptions().getOption(arg).clone();
+        updateRequiredOptions(opt);
+        if (opt.hasArg()) {
+            processArgs(opt, iter);
+        }
+        cmd.addOption(opt);
+    }
+    protected void processProperties(final Properties properties) throws ParseException {
+        if (properties == null) {
+            return;
+        }
+        for (final Enumeration<?> e = properties.propertyNames(); e.hasMoreElements();) {
+            final String option = e.nextElement().toString();
+            final Option opt = options.getOption(option);
+            if (opt == null) {
+                throw new UnrecognizedOptionException("Default option wasn't defined", option);
+            }
+            final OptionGroup optionGroup = options.getOptionGroup(opt);
+            final boolean selected = optionGroup != null && optionGroup.isSelected();
+            if (!cmd.hasOption(option) && !selected) {
+                final String value = properties.getProperty(option);
+                if (opt.hasArg()) {
+                    if (opt.isValuesEmpty()) {
+                        try {
+                            opt.processValue(value);
+                        } catch (final RuntimeException exp) {
+                        }
+                    }
+                } else if (!("yes".equalsIgnoreCase(value) || "true".equalsIgnoreCase(value) || "1".equalsIgnoreCase(value))) {
+                    continue;
+                }
+                cmd.addOption(opt);
+                updateRequiredOptions(opt);
+            }
+        }
+    }
+    protected void setOptions(final Options options) {
+        this.options = options;
+        this.requiredOptions = new ArrayList<>(options.getRequiredOptions());
+    }
+    private void updateRequiredOptions(final Option opt) throws ParseException {
+        if (opt.isRequired()) {
+            getRequiredOptions().remove(opt.getKey());
+        }
+        if (getOptions().getOptionGroup(opt) != null) {
+            final OptionGroup optionGroup = getOptions().getOptionGroup(opt);
+            if (optionGroup.isRequired()) {
+                getRequiredOptions().remove(optionGroup);
+            }
+            optionGroup.setSelected(opt);
+        }
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/PatternOptionBuilder.java =====
+package org.apache.commons.cli;
+import java.io.File;
+import java.io.FileInputStream;
+import java.net.URL;
+import java.util.Date;
+import java.util.Map;
+public class PatternOptionBuilder {
+    public static final Class<String> STRING_VALUE = String.class;
+    public static final Class<Object> OBJECT_VALUE = Object.class;
+    public static final Class<Number> NUMBER_VALUE = Number.class;
+    public static final Class<Date> DATE_VALUE = Date.class;
+    public static final Class<?> CLASS_VALUE = Class.class;
+    public static final Class<FileInputStream> EXISTING_FILE_VALUE = FileInputStream.class;
+    public static final Class<File> FILE_VALUE = File.class;
+    public static final Class<File[]> FILES_VALUE = File[].class;
+    public static final Class<URL> URL_VALUE = URL.class;
+    private static final Converter<?, UnsupportedOperationException> UNSUPPORTED = s -> {
+        throw new UnsupportedOperationException("Not yet implemented");
+    };
+    @Deprecated
+    public static Object getValueClass(final char ch) {
+        return getValueType(ch);
+    }
+    public static Class<?> getValueType(final char ch) {
+        switch (ch) {
+        case '@':
+            return OBJECT_VALUE;
+        case ':':
+            return STRING_VALUE;
+        case '%':
+            return NUMBER_VALUE;
+        case '+':
+            return CLASS_VALUE;
+        case '#':
+            return DATE_VALUE;
+        case '<':
+            return EXISTING_FILE_VALUE;
+        case '>':
+            return FILE_VALUE;
+        case '*':
+            return FILES_VALUE;
+        case '/':
+            return URL_VALUE;
+        }
+        return null;
+    }
+    public static boolean isValueCode(final char ch) {
+        return ch == '@' || ch == ':' || ch == '%' || ch == '+' || ch == '#' || ch == '<' || ch == '>' || ch == '*' || ch == '/' || ch == '!';
+    }
+    public static Options parsePattern(final String pattern) {
+        char opt = Char.SP;
+        boolean required = false;
+        Class<?> type = null;
+        Converter<?, ?> converter = Converter.DEFAULT;
+        final Options options = new Options();
+        for (int i = 0; i < pattern.length(); i++) {
+            final char ch = pattern.charAt(i);
+            if (!isValueCode(ch)) {
+                if (opt != Char.SP) {
+                    final Option option = Option.builder(String.valueOf(opt))
+                            .hasArg(type != null)
+                            .required(required)
+                            .type(type)
+                            .converter(converter)
+                            .get();
+                    options.addOption(option);
+                    required = false;
+                    type = null;
+                    converter = Converter.DEFAULT;
+                }
+                opt = ch;
+            } else if (ch == '!') {
+                required = true;
+            } else {
+                type = getValueType(ch);
+                final Map<Class<?>, Converter<?, ? extends Throwable>> map = TypeHandler.createDefaultMap();
+                map.put(FILES_VALUE, unsupported());
+                converter = new TypeHandler(map).getConverter(getValueType(ch));
+            }
+        }
+        if (opt != Char.SP) {
+            final Option option = Option.builder(String.valueOf(opt)).hasArg(type != null).required(required).type(type).get();
+            options.addOption(option);
+        }
+        return options;
+    }
+    @SuppressWarnings("unchecked")
+    static <T> T unsupported() {
+        return (T) UNSUPPORTED;
+    }
+    @Deprecated
+    public PatternOptionBuilder() {
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/PosixParser.java =====
+package org.apache.commons.cli;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import org.apache.commons.cli.help.OptionFormatter;
+@Deprecated
+public class PosixParser extends Parser {
+    private final List<String> tokens = new ArrayList<>();
+    private boolean eatTheRest;
+    private Option currentOption;
+    private Options options;
+    public PosixParser() {
+    }
+    private void addRemaining(final Iterator<String> iter) {
+        if (eatTheRest) {
+            iter.forEachRemaining(tokens::add);
+        }
+    }
+    protected void burstToken(final String token, final boolean stopAtNonOption) {
+        for (int i = 1; i < token.length(); i++) {
+            final String ch = String.valueOf(token.charAt(i));
+            if (!options.hasOption(ch)) {
+                if (stopAtNonOption) {
+                    processNonOptionToken(token.substring(i), true);
+                } else {
+                    tokens.add(token);
+                }
+                break;
+            }
+            tokens.add(OptionFormatter.DEFAULT_OPT_PREFIX + ch);
+            currentOption = options.getOption(ch);
+            if (currentOption.hasArg() && token.length() != i + 1) {
+                tokens.add(token.substring(i + 1));
+                break;
+            }
+        }
+    }
+    @Override
+    protected String[] flatten(final Options options, final String[] arguments, final boolean stopAtNonOption) throws ParseException {
+        init();
+        this.options = options;
+        final Iterator<String> iter = Arrays.asList(arguments).iterator();
+        while (iter.hasNext()) {
+            final String token = iter.next();
+            if (token != null) {
+                if (OptionFormatter.DEFAULT_OPT_PREFIX.equals(token) || OptionFormatter.DEFAULT_LONG_OPT_PREFIX.equals(token)) {
+                    tokens.add(token);
+                } else if (token.startsWith(OptionFormatter.DEFAULT_LONG_OPT_PREFIX)) {
+                    final int pos = DefaultParser.indexOfEqual(token);
+                    final String opt = pos == -1 ? token : token.substring(0, pos);
+                    final List<String> matchingOpts = options.getMatchingOptions(opt);
+                    if (matchingOpts.isEmpty()) {
+                        processNonOptionToken(token, stopAtNonOption);
+                    } else if (matchingOpts.size() > 1) {
+                        throw new AmbiguousOptionException(opt, matchingOpts);
+                    } else {
+                        currentOption = options.getOption(matchingOpts.get(0));
+                        tokens.add(OptionFormatter.DEFAULT_LONG_OPT_PREFIX + currentOption.getLongOpt());
+                        if (pos != -1) {
+                            tokens.add(token.substring(pos + 1));
+                        }
+                    }
+                } else if (token.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX)) {
+                    if (token.length() == 2 || options.hasOption(token)) {
+                        processOptionToken(token, stopAtNonOption);
+                    } else if (!options.getMatchingOptions(token).isEmpty()) {
+                        final List<String> matchingOpts = options.getMatchingOptions(token);
+                        if (matchingOpts.size() > 1) {
+                            throw new AmbiguousOptionException(token, matchingOpts);
+                        }
+                        final Option opt = options.getOption(matchingOpts.get(0));
+                        processOptionToken(OptionFormatter.DEFAULT_OPT_PREFIX + opt.getLongOpt(), stopAtNonOption);
+                    }
+                    else {
+                        burstToken(token, stopAtNonOption);
+                    }
+                } else {
+                    processNonOptionToken(token, stopAtNonOption);
+                }
+            }
+            addRemaining(iter);
+        }
+        return tokens.toArray(Util.EMPTY_STRING_ARRAY);
+    }
+    private void init() {
+        eatTheRest = false;
+        tokens.clear();
+    }
+    private void processNonOptionToken(final String value, final boolean stopAtNonOption) {
+        if (stopAtNonOption && (currentOption == null || !currentOption.hasArg())) {
+            eatTheRest = true;
+            tokens.add(OptionFormatter.DEFAULT_LONG_OPT_PREFIX);
+        }
+        tokens.add(value);
+    }
+    private void processOptionToken(final String token, final boolean stopAtNonOption) {
+        if (stopAtNonOption && !options.hasOption(token)) {
+            eatTheRest = true;
+        }
+        if (options.hasOption(token)) {
+            currentOption = options.getOption(token);
+        }
+        tokens.add(token);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/TypeHandler.java =====
+package org.apache.commons.cli;
+import java.io.File;
+import java.io.FileInputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.net.URL;
+import java.nio.file.Path;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+public class TypeHandler {
+    private static final TypeHandler DEFAULT = new TypeHandler();
+    private static final int HEX_RADIX = 16;
+    public static Class<?> createClass(final String className) throws ParseException {
+        return createValue(className, Class.class);
+    }
+    public static Date createDate(final String string) {
+        return createValueUnchecked(string, Date.class);
+    }
+    public static Map<Class<?>, Converter<?, ? extends Throwable>> createDefaultMap() {
+        return putDefaultMap(new HashMap<>());
+    }
+    public static File createFile(final String string) {
+        return createValueUnchecked(string, File.class);
+    }
+    @Deprecated
+    public static File[] createFiles(final String string) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+    @Deprecated
+    public static Number createNumber(final String string) throws ParseException {
+        return createValue(string, Number.class);
+    }
+    @Deprecated
+    public static Object createObject(final String className) throws ParseException {
+        return createValue(className, Object.class);
+    }
+    public static URL createURL(final String string) throws ParseException {
+        return createValue(string, URL.class);
+    }
+    public static <T> T createValue(final String string, final Class<T> clazz) throws ParseException {
+        try {
+            return getDefault().getConverter(clazz).apply(string);
+        } catch (final Exception e) {
+            throw ParseException.wrap(e);
+        }
+    }
+    @Deprecated
+    public static Object createValue(final String string, final Object obj) throws ParseException {
+        return createValue(string, (Class<?>) obj);
+    }
+    private static <T> T createValueUnchecked(final String string, final Class<T> clazz) {
+        try {
+            return createValue(string, clazz);
+        } catch (final ParseException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+    public static TypeHandler getDefault() {
+        return DEFAULT;
+    }
+    @Deprecated
+    public static FileInputStream openFile(final String string) throws ParseException {
+        return createValue(string, FileInputStream.class);
+    }
+    private static Map<Class<?>, Converter<?, ? extends Throwable>> putDefaultMap(final Map<Class<?>, Converter<?, ? extends Throwable>> map) {
+        map.put(Object.class, Converter.OBJECT);
+        map.put(Class.class, Converter.CLASS);
+        map.put(Date.class, Converter.DATE);
+        map.put(File.class, Converter.FILE);
+        map.put(Path.class, Converter.PATH);
+        map.put(Number.class, Converter.NUMBER);
+        map.put(URL.class, Converter.URL);
+        map.put(FileInputStream.class, FileInputStream::new);
+        map.put(Long.class, Long::parseLong);
+        map.put(Integer.class, Integer::parseInt);
+        map.put(Short.class, Short::parseShort);
+        map.put(Byte.class, Byte::parseByte);
+        map.put(Character.class, s -> {
+            if (s.startsWith("\\u")) {
+                final int codePoint = Integer.parseInt(s.substring(2), HEX_RADIX);
+                if (!Character.isBmpCodePoint(codePoint)) {
+                    throw new IllegalArgumentException("Code point U+" + Integer.toHexString(codePoint) + " does not fit in a char");
+                }
+                if (Character.isSurrogate((char) codePoint)) {
+                    throw new IllegalArgumentException("Code point U+" + Integer.toHexString(codePoint) + " is a UTF-16 surrogate");
+                }
+                return (char) codePoint;
+            }
+            return s.charAt(0);
+        });
+        map.put(Double.class, Double::parseDouble);
+        map.put(Float.class, Float::parseFloat);
+        map.put(BigInteger.class, BigInteger::new);
+        map.put(BigDecimal.class, BigDecimal::new);
+        return map;
+    }
+    private final Map<Class<?>, Converter<?, ? extends Throwable>> converterMap;
+    public TypeHandler() {
+        this(createDefaultMap());
+    }
+    public TypeHandler(final Map<Class<?>, Converter<?, ? extends Throwable>> converterMap) {
+        this.converterMap = Objects.requireNonNull(converterMap, "converterMap");
+    }
+    @SuppressWarnings("unchecked")
+    public <T> Converter<T, ?> getConverter(final Class<T> clazz) {
+        return (Converter<T, ?>) converterMap.getOrDefault(clazz, Converter.DEFAULT);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/UnrecognizedOptionException.java =====
+package org.apache.commons.cli;
+public class UnrecognizedOptionException extends ParseException {
+    private static final long serialVersionUID = -252504690284625623L;
+    private final String option;
+    public UnrecognizedOptionException(final String message) {
+        this(message, null);
+    }
+    public UnrecognizedOptionException(final String message, final String option) {
+        super(message);
+        this.option = option;
+    }
+    public String getOption() {
+        return option;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/Util.java =====
+package org.apache.commons.cli;
+import org.apache.commons.cli.help.OptionFormatter;
+final class Util {
+    static final String[] EMPTY_STRING_ARRAY = {};
+    static boolean isEmpty(final Object[] array) {
+        return array == null || array.length == 0;
+    }
+    static boolean isEmpty(final String str) {
+        return str == null || str.isEmpty();
+    }
+    static String stripLeadingAndTrailingQuotes(final String str) {
+        if (isEmpty(str)) {
+            return str;
+        }
+        final int length = str.length();
+        if (length > 1 && str.startsWith("\"") && str.endsWith("\"") && str.substring(1, length - 1).indexOf('"') == -1) {
+            return str.substring(1, length - 1);
+        }
+        return str;
+    }
+    static String stripLeadingHyphens(final String str) {
+        if (isEmpty(str)) {
+            return str;
+        }
+        if (str.startsWith(OptionFormatter.DEFAULT_LONG_OPT_PREFIX)) {
+            return str.substring(2);
+        }
+        if (str.startsWith(OptionFormatter.DEFAULT_OPT_PREFIX)) {
+            return str.substring(1);
+        }
+        return str;
+    }
+    private Util() {
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/AbstractHelpFormatter.java =====
+package org.apache.commons.cli.help;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.OptionGroup;
+import org.apache.commons.cli.Options;
+public abstract class AbstractHelpFormatter {
+    public abstract static class Builder<B extends Builder<B, T>, T extends AbstractHelpFormatter> implements Supplier<T> {
+        private Comparator<Option> comparator = DEFAULT_COMPARATOR;
+        private HelpAppendable helpAppendable = TextHelpAppendable.systemOut();
+        private OptionFormatter.Builder optionFormatBuilder = OptionFormatter.builder();
+        private String optionGroupSeparator = DEFAULT_OPTION_GROUP_SEPARATOR;
+        protected Builder() {
+        }
+        @SuppressWarnings("unchecked")
+        protected B asThis() {
+            return (B) this;
+        }
+        protected Comparator<Option> getComparator() {
+            return comparator;
+        }
+        protected HelpAppendable getHelpAppendable() {
+            return helpAppendable;
+        }
+        protected OptionFormatter.Builder getOptionFormatBuilder() {
+            return optionFormatBuilder;
+        }
+        protected String getOptionGroupSeparator() {
+            return optionGroupSeparator;
+        }
+        public B setComparator(final Comparator<Option> comparator) {
+            this.comparator = comparator;
+            return asThis();
+        }
+        public B setHelpAppendable(final HelpAppendable helpAppendable) {
+            this.helpAppendable = helpAppendable != null ? helpAppendable : TextHelpAppendable.systemOut();
+            return asThis();
+        }
+        public B setOptionFormatBuilder(final OptionFormatter.Builder optionFormatBuilder) {
+            this.optionFormatBuilder = optionFormatBuilder != null ? optionFormatBuilder : OptionFormatter.builder();
+            return asThis();
+        }
+        public B setOptionGroupSeparator(final String optionGroupSeparator) {
+            this.optionGroupSeparator = Util.defaultValue(optionGroupSeparator, "");
+            return asThis();
+        }
+    }
+    public static final Comparator<Option> DEFAULT_COMPARATOR = (opt1, opt2) -> opt1.getKey().compareToIgnoreCase(opt2.getKey());
+    public static final String DEFAULT_OPTION_GROUP_SEPARATOR = " | ";
+    public static final String DEFAULT_SYNTAX_PREFIX = "usage: ";
+    private final Comparator<Option> comparator;
+    private final HelpAppendable helpAppendable;
+    private final OptionFormatter.Builder optionFormatBuilder;
+    private final String optionGroupSeparator;
+    private String syntaxPrefix = DEFAULT_SYNTAX_PREFIX;
+    protected AbstractHelpFormatter(final Builder<?, ?> builder) {
+        this.helpAppendable = Objects.requireNonNull(builder.getHelpAppendable(), "helpAppendable");
+        this.optionFormatBuilder = Objects.requireNonNull(builder.getOptionFormatBuilder(), "optionFormatBuilder");
+        this.comparator = Objects.requireNonNull(builder.getComparator(), "comparator");
+        this.optionGroupSeparator = Util.defaultValue(builder.getOptionGroupSeparator(), "");
+    }
+    protected Comparator<Option> getComparator() {
+        return comparator;
+    }
+    protected HelpAppendable getHelpAppendable() {
+        return helpAppendable;
+    }
+    protected OptionFormatter.Builder getOptionFormatBuilder() {
+        return optionFormatBuilder;
+    }
+    public final OptionFormatter getOptionFormatter(final Option option) {
+        return optionFormatBuilder.build(option);
+    }
+    protected String getOptionGroupSeparator() {
+        return optionGroupSeparator;
+    }
+    public final HelpAppendable getSerializer() {
+        return helpAppendable;
+    }
+    public final String getSyntaxPrefix() {
+        return syntaxPrefix;
+    }
+    protected abstract TableDefinition getTableDefinition(Iterable<Option> options);
+    public void printHelp(final String cmdLineSyntax, final Options options) throws IOException {
+        printHelp(cmdLineSyntax, null, options, null, false);
+    }
+    public void printHelp(final String cmdLineSyntax, final String header, final Iterable<Option> options, final String footer, final boolean autoUsage)
+            throws IOException {
+        final Options optionsObject = new Options();
+        options.forEach(optionsObject::addOption);
+        printHelp(cmdLineSyntax, header, optionsObject, footer, autoUsage);
+    }
+    public void printHelp(final String cmdLineSyntax, final String header, final Options options, final String footer, final boolean autoUsage)
+            throws IOException {
+        if (Util.isEmpty(cmdLineSyntax)) {
+            throw new IllegalArgumentException("cmdLineSyntax not provided");
+        }
+        if (autoUsage) {
+            helpAppendable.appendParagraphFormat("%s %s %s", syntaxPrefix, cmdLineSyntax, toSyntaxOptions(options));
+        } else {
+            helpAppendable.appendParagraphFormat("%s %s", syntaxPrefix, cmdLineSyntax);
+        }
+        if (!Util.isEmpty(header)) {
+            helpAppendable.appendParagraph(header);
+        }
+        helpAppendable.appendTable(getTableDefinition(options.getOptions()));
+        if (!Util.isEmpty(footer)) {
+            helpAppendable.appendParagraph(footer);
+        }
+    }
+    public final void printOptions(final Iterable<Option> options) throws IOException {
+        printOptions(getTableDefinition(options));
+    }
+    public final void printOptions(final Options options) throws IOException {
+        printOptions(options.getOptions());
+    }
+    public final void printOptions(final TableDefinition tableDefinition) throws IOException {
+        helpAppendable.appendTable(tableDefinition);
+    }
+    public final void setSyntaxPrefix(final String prefix) {
+        this.syntaxPrefix = prefix;
+    }
+    public List<Option> sort(final Iterable<Option> options) {
+        final List<Option> result = new ArrayList<>();
+        if (options != null) {
+            options.forEach(result::add);
+            result.sort(comparator);
+        }
+        return result;
+    }
+    public List<Option> sort(final Options options) {
+        return sort(options == null ? null : options.getOptions());
+    }
+    public final String toArgName(final String argName) {
+        return optionFormatBuilder.toArgName(argName);
+    }
+    public String toSyntaxOptions(final Iterable<Option> options) {
+        return toSyntaxOptions(options, o -> null);
+    }
+    protected String toSyntaxOptions(final Iterable<Option> options, final Function<Option, OptionGroup> lookup) {
+        final Collection<OptionGroup> processedGroups = new ArrayList<>();
+        final List<Option> optList = sort(options);
+        final StringBuilder buff = new StringBuilder();
+        String prefix = "";
+        for (final Option option : optList) {
+            final OptionGroup optionGroup = lookup.apply(option);
+            if (optionGroup != null) {
+                if (!processedGroups.contains(optionGroup)) {
+                    processedGroups.add(optionGroup);
+                    buff.append(prefix).append(toSyntaxOptions(optionGroup));
+                    prefix = " ";
+                }
+            }
+            else {
+                buff.append(prefix).append(optionFormatBuilder.build(option).toSyntaxOption());
+                prefix = " ";
+            }
+        }
+        return buff.toString();
+    }
+    public String toSyntaxOptions(final OptionGroup group) {
+        final StringBuilder buff = new StringBuilder();
+        final List<Option> optList = sort(group.getOptions());
+        OptionFormatter formatter = null;
+        final Iterator<Option> iter = optList.iterator();
+        while (iter.hasNext()) {
+            formatter = optionFormatBuilder.build(iter.next());
+            buff.append(formatter.toSyntaxOption(true));
+            if (iter.hasNext()) {
+                buff.append(optionGroupSeparator);
+            }
+        }
+        if (formatter != null) {
+            return group.isRequired() ? buff.toString() : formatter.toOptional(buff.toString());
+        }
+        return "";
+    }
+    public String toSyntaxOptions(final Options options) {
+        return toSyntaxOptions(options.getOptions(), options::getOptionGroup);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/FilterHelpAppendable.java =====
+package org.apache.commons.cli.help;
+import java.io.IOException;
+public abstract class FilterHelpAppendable implements HelpAppendable {
+    protected final Appendable output;
+    protected FilterHelpAppendable(final Appendable output) {
+        this.output = output;
+    }
+    @Override
+    public FilterHelpAppendable append(final char ch) throws IOException {
+        output.append(ch);
+        return this;
+    }
+    @Override
+    public FilterHelpAppendable append(final CharSequence text) throws IOException {
+        output.append(text);
+        return this;
+    }
+    @Override
+    public FilterHelpAppendable append(final CharSequence csq, final int start, final int end) throws IOException {
+        output.append(csq, start, end);
+        return this;
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/HelpAppendable.java =====
+package org.apache.commons.cli.help;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Formatter;
+import java.util.IllegalFormatException;
+public interface HelpAppendable extends Appendable {
+    default void appendFormat(final String format, final Object... args) throws IOException {
+        append(String.format(format, args));
+    }
+    void appendHeader(int level, CharSequence text) throws IOException;
+    void appendList(boolean ordered, Collection<CharSequence> list) throws IOException;
+    void appendParagraph(CharSequence paragraph) throws IOException;
+    default void appendParagraphFormat(final String format, final Object... args) throws IOException {
+        appendParagraph(String.format(format, args));
+    }
+    void appendTable(TableDefinition table) throws IOException;
+    void appendTitle(CharSequence title) throws IOException;
+}
+
+// ===== FILE: org/apache/commons/cli/help/HelpFormatter.java =====
+package org.apache.commons.cli.help;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.commons.cli.Option;
+public class HelpFormatter extends AbstractHelpFormatter {
+    public static class Builder extends AbstractHelpFormatter.Builder<Builder, HelpFormatter> {
+        private boolean showSince = true;
+        protected Builder() {
+        }
+        @Override
+        public HelpFormatter get() {
+            return new HelpFormatter(this);
+        }
+        public Builder setShowSince(final boolean showSince) {
+            this.showSince = showSince;
+            return this;
+        }
+    }
+    private static final String LABEL_SINCE = "Since";
+    private static final String LABEL_DESCRIPTION = "Description";
+    private static final String LABEL_OPTIONS = "Options";
+    public static final int DEFAULT_WIDTH = 74;
+    public static final int DEFAULT_LEFT_PAD = 1;
+    public static final int DEFAULT_COLUMN_SPACING = 5;
+    public static Builder builder() {
+        return new Builder();
+    }
+    private final boolean showSince;
+    protected HelpFormatter(final Builder builder) {
+        super(builder);
+        this.showSince = builder.showSince;
+    }
+    @Override
+    public TableDefinition getTableDefinition(final Iterable<Option> options) {
+        final TextStyle.Builder builder = TextStyle.builder().setAlignment(TextStyle.Alignment.LEFT).setIndent(DEFAULT_LEFT_PAD).setScalable(false);
+        final List<TextStyle> styles = new ArrayList<>();
+        styles.add(builder.get());
+        builder.setScalable(true).setLeftPad(DEFAULT_COLUMN_SPACING);
+        if (showSince) {
+            builder.setAlignment(TextStyle.Alignment.CENTER);
+            styles.add(builder.get());
+        }
+        builder.setAlignment(TextStyle.Alignment.LEFT);
+        styles.add(builder.get());
+        final List<List<String>> rows = new ArrayList<>();
+        final StringBuilder sb = new StringBuilder();
+        options.forEach(option -> {
+            final List<String> row = new ArrayList<>();
+            final OptionFormatter formatter = getOptionFormatBuilder().build(option);
+            sb.setLength(0);
+            sb.append(formatter.getBothOpt());
+            if (option.hasArg()) {
+                sb.append(" ").append(formatter.getArgName());
+            }
+            row.add(sb.toString());
+            if (showSince) {
+                row.add(formatter.getSince());
+            }
+            row.add(formatter.getDescription());
+            rows.add(row);
+        });
+        final List<String> headers = new ArrayList<>(3);
+        headers.add(LABEL_OPTIONS);
+        if (showSince) {
+            headers.add(LABEL_SINCE);
+        }
+        headers.add(LABEL_DESCRIPTION);
+        return TableDefinition.from("", styles, headers, rows);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/OptionFormatter.java =====
+package org.apache.commons.cli.help;
+import java.util.Arrays;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import org.apache.commons.cli.DeprecatedAttributes;
+import org.apache.commons.cli.Option;
+public final class OptionFormatter {
+    public static final class Builder implements Supplier<OptionFormatter> {
+        private final String[] argNameDelimiters;
+        private String defaultArgName;
+        private Function<Option, String> deprecatedFormatFunction;
+        private String longOptPrefix;
+        private String optPrefix;
+        private String optSeparator;
+        private String optArgSeparator;
+        private final String[] optionalDelimiters;
+        private BiFunction<OptionFormatter, Boolean, String> syntaxFormatFunction;
+        private Builder() {
+            argNameDelimiters = Arrays.copyOf(DEFAULT_ARG_NAME_DELIMITERS, 2);
+            defaultArgName = DEFAULT_ARG_NAME;
+            deprecatedFormatFunction = NO_DEPRECATED_FORMAT;
+            longOptPrefix = DEFAULT_LONG_OPT_PREFIX;
+            optPrefix = DEFAULT_OPT_PREFIX;
+            optSeparator = DEFAULT_OPT_SEPARATOR;
+            optArgSeparator = DEFAULT_OPT_ARG_SEPARATOR;
+            optionalDelimiters = Arrays.copyOf(DEFAULT_OPTIONAL_DELIMITERS, 2);
+        }
+        public Builder(final OptionFormatter optionFormatter) {
+            optionalDelimiters = Arrays.copyOf(optionFormatter.optionalDelimiters, 2);
+            argNameDelimiters = Arrays.copyOf(optionFormatter.argNameDelimiters, 2);
+            defaultArgName = optionFormatter.defaultArgName;
+            optPrefix = optionFormatter.optPrefix;
+            longOptPrefix = optionFormatter.longOptPrefix;
+            optSeparator = optionFormatter.optSeparator;
+            deprecatedFormatFunction = optionFormatter.deprecatedFormatFunction;
+            syntaxFormatFunction = optionFormatter.syntaxFormatFunction;
+        }
+        public OptionFormatter build(final Option option) {
+            return new OptionFormatter(option, this);
+        }
+        @Override
+        public OptionFormatter get() {
+            return null;
+        }
+        public Builder setArgumentNameDelimiters(final String begin, final String end) {
+            this.argNameDelimiters[0] = Util.defaultValue(begin, "");
+            this.argNameDelimiters[1] = Util.defaultValue(end, "");
+            return this;
+        }
+        public Builder setDefaultArgName(final String name) {
+            this.defaultArgName = Util.defaultValue(name, DEFAULT_ARG_NAME);
+            return this;
+        }
+        public Builder setDeprecatedFormatFunction(final Function<Option, String> deprecatedFormatFunction) {
+            this.deprecatedFormatFunction = deprecatedFormatFunction;
+            return this;
+        }
+        public Builder setLongOptPrefix(final String prefix) {
+            this.longOptPrefix = Util.defaultValue(prefix, "");
+            return this;
+        }
+        public Builder setOptArgSeparator(final String optArgSeparator) {
+            this.optArgSeparator = Util.defaultValue(optArgSeparator, "");
+            return this;
+        }
+        public Builder setOptionalDelimiters(final String begin, final String end) {
+            this.optionalDelimiters[0] = Util.defaultValue(begin, "");
+            this.optionalDelimiters[1] = Util.defaultValue(end, "");
+            return this;
+        }
+        public Builder setOptPrefix(final String optPrefix) {
+            this.optPrefix = Util.defaultValue(optPrefix, "");
+            return this;
+        }
+        public Builder setOptSeparator(final String optSeparator) {
+            this.optSeparator = Util.defaultValue(optSeparator, "");
+            return this;
+        }
+        public Builder setSyntaxFormatFunction(final BiFunction<OptionFormatter, Boolean, String> syntaxFormatFunction) {
+            this.syntaxFormatFunction = syntaxFormatFunction;
+            return this;
+        }
+        public String toArgName(final String argName) {
+            return argNameDelimiters[0] + Util.defaultValue(argName, "") + argNameDelimiters[1];
+        }
+    }
+    private static final String[] DEFAULT_OPTIONAL_DELIMITERS = { "[", "]" };
+    private static final String[] DEFAULT_ARG_NAME_DELIMITERS = { "<", ">" };
+    public static final String DEFAULT_ARG_NAME = "arg";
+    public static final Function<Option, String> SIMPLE_DEPRECATED_FORMAT = o -> "[Deprecated] " + Util.defaultValue(o.getDescription(), "");
+    public static final Function<Option, String> COMPLEX_DEPRECATED_FORMAT = o -> {
+        final StringBuilder sb = new StringBuilder("[Deprecated");
+        final DeprecatedAttributes attr = o.getDeprecated();
+        if (attr.isForRemoval()) {
+            sb.append(" for removal");
+        }
+        if (!Util.isEmpty(attr.getSince())) {
+            sb.append(" since ").append(attr.getSince());
+        }
+        if (!Util.isEmpty(attr.getDescription())) {
+            sb.append(". ").append(attr.getDescription());
+        }
+        sb.append("]");
+        if (!Util.isEmpty(o.getDescription())) {
+            sb.append(" ").append(o.getDescription());
+        }
+        return sb.toString();
+    };
+    public static final Function<Option, String> NO_DEPRECATED_FORMAT = o -> Util.defaultValue(o.getDescription(), "");
+    public static final String DEFAULT_SYNTAX_PREFIX = "usage: ";
+    public static final String DEFAULT_OPT_PREFIX = "-";
+    public static final String DEFAULT_LONG_OPT_PREFIX = "--";
+    public static final String DEFAULT_OPT_SEPARATOR = ", ";
+    public static final String DEFAULT_OPT_ARG_SEPARATOR = " ";
+    public static Builder builder() {
+        return new Builder();
+    }
+    public static OptionFormatter from(final Option option) {
+        return new Builder().build(option);
+    }
+    private final String[] argNameDelimiters;
+    private final String defaultArgName;
+    private final Function<Option, String> deprecatedFormatFunction;
+    private final String longOptPrefix;
+    private final String optPrefix;
+    private final String optSeparator;
+    private final String optArgSeparator;
+    private final String[] optionalDelimiters;
+    private final BiFunction<OptionFormatter, Boolean, String> syntaxFormatFunction;
+    private final Option option;
+    private OptionFormatter(final Option option, final Builder builder) {
+        this.optionalDelimiters = builder.optionalDelimiters;
+        this.argNameDelimiters = builder.argNameDelimiters;
+        this.defaultArgName = builder.defaultArgName;
+        this.optPrefix = builder.optPrefix;
+        this.longOptPrefix = builder.longOptPrefix;
+        this.optSeparator = builder.optSeparator;
+        this.optArgSeparator = builder.optArgSeparator;
+        this.deprecatedFormatFunction = builder.deprecatedFormatFunction;
+        this.option = option;
+        this.syntaxFormatFunction = builder.syntaxFormatFunction != null ? builder.syntaxFormatFunction : (o, required) -> {
+            final StringBuilder buff = new StringBuilder();
+            final String argName = o.getArgName();
+            buff.append(Util.defaultValue(o.getOpt(), o.getLongOpt()));
+            if (!Util.isEmpty(argName)) {
+                buff.append(optArgSeparator).append(argName);
+            }
+            final boolean requiredFlg = required == null ? o.isRequired() : required;
+            return requiredFlg ? buff.toString() : o.toOptional(buff.toString());
+        };
+    }
+    public String getArgName() {
+        return option.hasArg() ? argNameDelimiters[0] + Util.defaultValue(option.getArgName(), defaultArgName) + argNameDelimiters[1] : "";
+    }
+    public String getBothOpt() {
+        final String lOpt = getLongOpt();
+        final StringBuilder sb = new StringBuilder(getOpt());
+        if (sb.length() > 0 && !Util.isEmpty(lOpt)) {
+            sb.append(optSeparator);
+        }
+        return sb.append(getLongOpt()).toString();
+    }
+    public String getDescription() {
+        return option.isDeprecated() ? deprecatedFormatFunction.apply(option) : Util.defaultValue(option.getDescription(), "");
+    }
+    public String getLongOpt() {
+        return Util.isEmpty(option.getLongOpt()) ? "" : longOptPrefix + option.getLongOpt();
+    }
+    public String getOpt() {
+        return Util.isEmpty(option.getOpt()) ? "" : optPrefix + option.getOpt();
+    }
+    public String getSince() {
+        return Util.defaultValue(option.getSince(), DEFAULT_LONG_OPT_PREFIX);
+    }
+    public boolean isRequired() {
+        return option.isRequired();
+    }
+    public String toOptional(final String text) {
+        if (Util.isEmpty(text)) {
+            return "";
+        }
+        return optionalDelimiters[0] + text + optionalDelimiters[1];
+    }
+    public String toSyntaxOption() {
+        return toSyntaxOption(isRequired());
+    }
+    public String toSyntaxOption(final boolean isRequired) {
+        return syntaxFormatFunction.apply(this, isRequired);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/TableDefinition.java =====
+package org.apache.commons.cli.help;
+import java.util.List;
+public interface TableDefinition {
+    static TableDefinition from(final String caption, final List<TextStyle> columnStyle, final List<String> headers, final Iterable<List<String>> rows) {
+        return new TableDefinition() {
+            @Override
+            public String caption() {
+                return caption;
+            }
+            @Override
+            public List<TextStyle> columnTextStyles() {
+                return columnStyle;
+            }
+            @Override
+            public List<String> headers() {
+                return headers;
+            }
+            @Override
+            public Iterable<List<String>> rows() {
+                return rows;
+            }
+        };
+    }
+    String caption();
+    List<TextStyle> columnTextStyles();
+    List<String> headers();
+    Iterable<List<String>> rows();
+}
+
+// ===== FILE: org/apache/commons/cli/help/TextHelpAppendable.java =====
+package org.apache.commons.cli.help;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.Set;
+public class TextHelpAppendable extends FilterHelpAppendable {
+    public static final int DEFAULT_WIDTH = 74;
+    public static final int DEFAULT_LEFT_PAD = 1;
+    public static final int DEFAULT_INDENT = 3;
+    public static final int DEFAULT_LIST_INDENT = 7;
+    private static final String BLANK_LINE = "";
+    private static final Set<Character> BREAK_CHAR_SET = Collections.unmodifiableSet(new HashSet<>(Arrays.asList('\t', '\n', '\f', '\r',
+            (char) Character.LINE_SEPARATOR,
+            (char) Character.PARAGRAPH_SEPARATOR,
+            '\u000b',
+            '\u001c',
+            '\u001d',
+            '\u001e',
+            '\u001f'
+    )));
+    public static int indexOfWrap(final CharSequence text, final int width, final int startPos) {
+        if (width < 1) {
+            throw new IllegalArgumentException("Width must be greater than 0");
+        }
+        final long end = (long) startPos + width;
+        int limit = (int) Math.min(end, text.length());
+        for (int idx = startPos; idx < limit; idx++) {
+            if (BREAK_CHAR_SET.contains(text.charAt(idx))) {
+                return idx;
+            }
+        }
+        if (end >= text.length()) {
+            return text.length();
+        }
+        limit = (int) Math.min(end, text.length() - 1);
+        int pos;
+        for (pos = limit; pos >= startPos; --pos) {
+            if (Util.isWhitespace(text.charAt(pos))) {
+                break;
+            }
+        }
+        return pos > startPos ? pos : limit - 1;
+    }
+    protected static TextHelpAppendable systemOut() {
+        return new TextHelpAppendable(System.out);
+    }
+    private final TextStyle.Builder textStyleBuilder;
+    public TextHelpAppendable(final Appendable output) {
+        super(output);
+        textStyleBuilder = TextStyle.builder()
+            .setMaxWidth(DEFAULT_WIDTH)
+            .setLeftPad(DEFAULT_LEFT_PAD)
+            .setIndent(DEFAULT_INDENT);
+    }
+    protected TableDefinition adjustTableFormat(final TableDefinition table) {
+        final List<TextStyle.Builder> styleBuilders = new ArrayList<>();
+        for (int i = 0; i < table.columnTextStyles().size(); i++) {
+            final TextStyle style = table.columnTextStyles().get(i);
+            final TextStyle.Builder builder = TextStyle.builder().setTextStyle(style);
+            styleBuilders.add(builder);
+            final String header = table.headers().get(i);
+            if (style.getMaxWidth() < header.length() || style.getMaxWidth() == TextStyle.UNSET_MAX_WIDTH) {
+                builder.setMaxWidth(header.length());
+            }
+            if (style.getMinWidth() < header.length()) {
+                builder.setMinWidth(header.length());
+            }
+            for (final List<String> row : table.rows()) {
+                final String cell = row.get(i);
+                if (cell.length() > builder.getMaxWidth()) {
+                    builder.setMaxWidth(cell.length());
+                }
+            }
+        }
+        int calcWidth = 0;
+        int adjustedMaxWidth = textStyleBuilder.getMaxWidth();
+        for (final TextStyle.Builder builder : styleBuilders) {
+            adjustedMaxWidth -= builder.getLeftPad();
+            if (builder.isScalable()) {
+                calcWidth += builder.getMaxWidth();
+            } else {
+                adjustedMaxWidth -= builder.getMaxWidth();
+            }
+        }
+        if (calcWidth > adjustedMaxWidth) {
+            final double fraction = adjustedMaxWidth * 1.0 / calcWidth;
+            for (int i = 0; i < styleBuilders.size(); i++) {
+                final TextStyle.Builder builder = styleBuilders.get(i);
+                if (builder.isScalable()) {
+                    styleBuilders.set(i, resize(builder, fraction));
+                }
+            }
+        }
+        final List<TextStyle> styles = new ArrayList<>();
+        styleBuilders.forEach(builder -> styles.add(builder.get()));
+        return TableDefinition.from(table.caption(), styles, table.headers(), table.rows());
+    }
+    @Override
+    public void appendHeader(final int level, final CharSequence text) throws IOException {
+        if (!Util.isEmpty(text)) {
+            if (level < 1) {
+                throw new IllegalArgumentException("level must be at least 1");
+            }
+            final char[] fillChars = { '=', '%', '+', '_' };
+            final int idx = Math.min(level, fillChars.length) - 1;
+            final TextStyle style = textStyleBuilder.get();
+            final Queue<String> queue = makeColumnQueue(text, style);
+            queue.add(Util.repeatSpace(style.getLeftPad()) + Util.repeat(Math.min(text.length(), style.getMaxWidth()), fillChars[idx]));
+            queue.add(BLANK_LINE);
+            printQueue(queue);
+        }
+    }
+    @Override
+    public void appendList(final boolean ordered, final Collection<CharSequence> list) throws IOException {
+        if (list != null && !list.isEmpty()) {
+            final TextStyle.Builder builder = TextStyle.builder().setLeftPad(textStyleBuilder.getLeftPad()).setIndent(DEFAULT_LIST_INDENT);
+            int i = 1;
+            for (final CharSequence line : list) {
+                final String entry = ordered ? String.format(" %s. %s", i++, Util.defaultValue(line, BLANK_LINE))
+                        : String.format(" * %s", Util.defaultValue(line, BLANK_LINE));
+                builder.setMaxWidth(Math.min(textStyleBuilder.getMaxWidth(), entry.length()));
+                printQueue(makeColumnQueue(entry, builder.get()));
+            }
+            output.append(System.lineSeparator());
+        }
+    }
+    @Override
+    public void appendParagraph(final CharSequence paragraph) throws IOException {
+        if (!Util.isEmpty(paragraph)) {
+            final Queue<String> queue = makeColumnQueue(paragraph, textStyleBuilder.get());
+            queue.add(BLANK_LINE);
+            printQueue(queue);
+        }
+    }
+    @Override
+    public void appendTable(final TableDefinition rawTable) throws IOException {
+        final TableDefinition table = adjustTableFormat(rawTable);
+        appendParagraph(table.caption());
+        final List<TextStyle> headerStyles = new ArrayList<>();
+        table.columnTextStyles().forEach(style -> headerStyles.add(TextStyle.builder().setTextStyle(style).setAlignment(TextStyle.Alignment.CENTER).get()));
+        writeColumnQueues(makeColumnQueues(table.headers(), headerStyles), headerStyles);
+        for (final List<String> row : table.rows()) {
+            writeColumnQueues(makeColumnQueues(row, table.columnTextStyles()), table.columnTextStyles());
+        }
+        output.append(System.lineSeparator());
+    }
+    @Override
+    public void appendTitle(final CharSequence title) throws IOException {
+        if (!Util.isEmpty(title)) {
+            final TextStyle style = textStyleBuilder.get();
+            final Queue<String> queue = makeColumnQueue(title, style);
+            queue.add(Util.repeatSpace(style.getLeftPad()) + Util.repeat(Math.min(title.length(), style.getMaxWidth()), '#'));
+            queue.add(BLANK_LINE);
+            printQueue(queue);
+        }
+    }
+    public int getIndent() {
+        return textStyleBuilder.getIndent();
+    }
+    public int getLeftPad() {
+        return textStyleBuilder.getLeftPad();
+    }
+    public int getMaxWidth() {
+        return textStyleBuilder.getMaxWidth();
+    }
+    public TextStyle.Builder getTextStyleBuilder() {
+        return textStyleBuilder;
+    }
+    protected Queue<String> makeColumnQueue(final CharSequence columnData, final TextStyle style) {
+        final String lpad = Util.repeatSpace(style.getLeftPad());
+        final String indent = Util.repeatSpace(style.getIndent());
+        final Queue<String> result = new LinkedList<>();
+        int wrapPos = 0;
+        int lastPos;
+        final int wrappedMaxWidth = style.getMaxWidth() - indent.length();
+        while (wrapPos < columnData.length()) {
+            final int workingWidth = wrapPos == 0 ? style.getMaxWidth() : wrappedMaxWidth;
+            lastPos = indexOfWrap(columnData, workingWidth, wrapPos);
+            final CharSequence working = columnData.subSequence(wrapPos, lastPos);
+            result.add(lpad + style.pad(wrapPos > 0, working));
+            wrapPos = Util.indexOfNonWhitespace(columnData, lastPos);
+            wrapPos = wrapPos == -1 ? lastPos + 1 : wrapPos;
+        }
+        return result;
+    }
+    protected List<Queue<String>> makeColumnQueues(final List<String> columnData, final List<TextStyle> styles) {
+        final List<Queue<String>> result = new ArrayList<>();
+        for (int i = 0; i < columnData.size(); i++) {
+            result.add(makeColumnQueue(columnData.get(i), styles.get(i)));
+        }
+        return result;
+    }
+    private void printQueue(final Queue<String> queue) throws IOException {
+        for (final String s : queue) {
+            appendFormat("%s%n", Util.rtrim(s));
+        }
+    }
+    public void printWrapped(final String text) throws IOException {
+        printQueue(makeColumnQueue(text, this.textStyleBuilder.get()));
+    }
+    public void printWrapped(final String text, final TextStyle style) throws IOException {
+        printQueue(makeColumnQueue(text, style));
+    }
+    private int resize(final int orig, final double fraction) {
+        return (int) (orig * fraction);
+    }
+    protected TextStyle.Builder resize(final TextStyle.Builder builder, final double fraction) {
+        final double indentFrac = builder.getIndent() * 1.0 / builder.getMaxWidth();
+        builder.setMaxWidth(Math.max(resize(builder.getMaxWidth(), fraction), builder.getMinWidth()));
+        final int maxAdjust = builder.getMaxWidth() / 3;
+        int newIndent = builder.getMaxWidth() == 1 ? 0 : builder.getIndent();
+        if (newIndent > maxAdjust) {
+            newIndent = Math.min(resize(builder.getIndent(), indentFrac), maxAdjust);
+        }
+        builder.setIndent(newIndent);
+        return builder;
+    }
+    public void setIndent(final int indent) {
+        textStyleBuilder.setIndent(indent);
+    }
+    public void setLeftPad(final int leftPad) {
+        textStyleBuilder.setLeftPad(leftPad);
+    }
+    public void setMaxWidth(final int maxWidth) {
+        textStyleBuilder.setMaxWidth(maxWidth);
+    }
+    protected void writeColumnQueues(final List<Queue<String>> columnQueues, final List<TextStyle> styles) throws IOException {
+        boolean moreData = true;
+        final String lPad = Util.repeatSpace(textStyleBuilder.get().getLeftPad());
+        while (moreData) {
+            output.append(lPad);
+            moreData = false;
+            for (int i = 0; i < columnQueues.size(); i++) {
+                final TextStyle style = styles.get(i);
+                final Queue<String> columnQueue = columnQueues.get(i);
+                final String line = columnQueue.poll();
+                if (Util.isEmpty(line)) {
+                    output.append(Util.repeatSpace(style.getMaxWidth() + style.getLeftPad()));
+                } else {
+                    output.append(line);
+                }
+                moreData |= !columnQueue.isEmpty();
+            }
+            output.append(System.lineSeparator());
+        }
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/TextStyle.java =====
+package org.apache.commons.cli.help;
+import java.util.function.Supplier;
+public final class TextStyle {
+    public enum Alignment {
+        LEFT,
+        CENTER,
+        RIGHT
+    }
+    public static final class Builder implements Supplier<TextStyle> {
+        private Alignment alignment = Alignment.LEFT;
+        private int leftPad;
+        private int indent;
+        private boolean scalable = true;
+        private int minWidth;
+        private int maxWidth = UNSET_MAX_WIDTH;
+        private Builder() {
+        }
+        @Override
+        public TextStyle get() {
+            return new TextStyle(this);
+        }
+        public int getIndent() {
+            return indent;
+        }
+        public int getLeftPad() {
+            return leftPad;
+        }
+        public int getMaxWidth() {
+            return maxWidth;
+        }
+        public int getMinWidth() {
+            return minWidth;
+        }
+        public boolean isScalable() {
+            return scalable;
+        }
+        public Builder setAlignment(final Alignment alignment) {
+            this.alignment = alignment;
+            return this;
+        }
+        public Builder setIndent(final int indent) {
+            this.indent = indent;
+            return this;
+        }
+        public Builder setLeftPad(final int leftPad) {
+            this.leftPad = leftPad;
+            return this;
+        }
+        public Builder setMaxWidth(final int maxWidth) {
+            this.maxWidth = maxWidth;
+            return this;
+        }
+        public Builder setMinWidth(final int minWidth) {
+            this.minWidth = minWidth;
+            return this;
+        }
+        public Builder setScalable(final boolean scalable) {
+            this.scalable = scalable;
+            return this;
+        }
+        public Builder setTextStyle(final TextStyle style) {
+            this.alignment = style.alignment;
+            this.leftPad = style.leftPad;
+            this.indent = style.indent;
+            this.scalable = style.scalable;
+            this.minWidth = style.minWidth;
+            this.maxWidth = style.maxWidth;
+            return this;
+        }
+    }
+    public static final int UNSET_MAX_WIDTH = Integer.MAX_VALUE;
+    public static final TextStyle DEFAULT = builder().get();
+    public static Builder builder() {
+        return new Builder();
+    }
+    private final Alignment alignment;
+    private final int leftPad;
+    private final int indent;
+    private final boolean scalable;
+    private final int minWidth;
+    private final int maxWidth;
+    private TextStyle(final Builder builder) {
+        this.alignment = builder.alignment;
+        this.leftPad = builder.leftPad;
+        this.indent = builder.indent;
+        this.scalable = builder.scalable;
+        this.minWidth = builder.minWidth;
+        this.maxWidth = builder.maxWidth;
+    }
+    public Alignment getAlignment() {
+        return alignment;
+    }
+    public int getIndent() {
+        return indent;
+    }
+    public int getLeftPad() {
+        return leftPad;
+    }
+    public int getMaxWidth() {
+        return maxWidth;
+    }
+    public int getMinWidth() {
+        return minWidth;
+    }
+    public boolean isScalable() {
+        return scalable;
+    }
+    public CharSequence pad(final boolean addIndent, final CharSequence text) {
+        if (text.length() >= maxWidth) {
+            return text;
+        }
+        String indentPad;
+        String rest;
+        final StringBuilder sb = new StringBuilder();
+        switch (alignment) {
+        case CENTER:
+            int padLen;
+            if (maxWidth == UNSET_MAX_WIDTH) {
+                padLen = addIndent ? indent : 0;
+            } else {
+                padLen = maxWidth - text.length();
+            }
+            final int left = padLen / 2;
+            indentPad = Util.repeatSpace(left);
+            rest = Util.repeatSpace(padLen - left);
+            sb.append(indentPad).append(text).append(rest);
+            break;
+        case LEFT:
+        case RIGHT:
+        default:
+            if (maxWidth == UNSET_MAX_WIDTH) {
+                indentPad = addIndent ? Util.repeatSpace(indent) : "";
+                rest = "";
+            } else {
+                int restLen = maxWidth - text.length();
+                if (addIndent && restLen >= indent) {
+                    indentPad = Util.repeatSpace(indent);
+                    restLen -= indent;
+                } else {
+                    indentPad = "";
+                }
+                rest = Util.repeatSpace(restLen);
+            }
+            if (alignment == Alignment.LEFT) {
+                sb.append(indentPad).append(text).append(rest);
+            } else {
+                sb.append(indentPad).append(rest).append(text);
+            }
+            break;
+        }
+        return sb.toString();
+    }
+    @Override
+    public String toString() {
+        return String.format("TextStyle{%s, l:%s, i:%s, %s, min:%s, max:%s}", alignment, leftPad, indent, scalable, minWidth,
+                maxWidth == UNSET_MAX_WIDTH ? "unset" : maxWidth);
+    }
+}
+
+// ===== FILE: org/apache/commons/cli/help/Util.java =====
+package org.apache.commons.cli.help;
+import java.util.Arrays;
+final class Util {
+    private static final int NOT_FOUND = -1;
+    static <T extends CharSequence> T defaultValue(final T str, final T defaultValue) {
+        return isEmpty(str) ? defaultValue : str;
+    }
+    static int indexOfNonWhitespace(final CharSequence text, final int startPos) {
+        if (isEmpty(text)) {
+            return NOT_FOUND;
+        }
+        int idx = startPos;
+        final int length = text.length();
+        while (idx < length && isWhitespace(text.charAt(idx))) {
+            idx++;
+        }
+        return idx < length ? idx : NOT_FOUND;
+    }
+    static boolean isEmpty(final CharSequence str) {
+        return str == null || str.length() == 0;
+    }
+    static boolean isWhitespace(final char c) {
+        return Character.isWhitespace(c) || Character.PARAGRAPH_SEPARATOR == c;
+    }
+    static String ltrim(final String s) {
+        final int pos = indexOfNonWhitespace(s, 0);
+        return pos == NOT_FOUND ? "" : s.substring(pos);
+    }
+    static String repeat(final int len, final char fillChar) {
+        final char[] padding = new char[len];
+        Arrays.fill(padding, fillChar);
+        return new String(padding);
+    }
+    static String repeatSpace(final int len) {
+        return repeat(len, ' ');
+    }
+    static String rtrim(final String s) {
+        if (isEmpty(s)) {
+            return s;
+        }
+        int pos = s.length();
+        while (pos > 0 && isWhitespace(s.charAt(pos - 1))) {
+            --pos;
+        }
+        return s.substring(0, pos);
+    }
+    private Util() {
+    }
+}
