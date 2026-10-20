@@ -1,0 +1,50 @@
+Code Smell Review — Apache Commons CLI
+The review below is limited to the three requested smells: Long Method, God Class, and Long Parameter List. Detections are based on the supplied commons-cli-scope.txt source, using the file paths in its headers. Within each category, findings are ordered by source-file appearance.
+1. Long Method
+Detection 1
+- Smell: Long Method
+- Code unit: DefaultParser.handleShortAndLongOption(String)
+- File: org/apache/commons/cli/DefaultParser.java
+- Evidence:
+  - The method begins at line 678 and contains several nested branches through line 726.
+  - It distinguishes single-character options, exact short options, matching long options, abbreviated long options, Java properties, concatenated options, and options with = values.
+  - It invokes getLongPrefix(), getMatchingLongOptions(), isJavaProperty(), handleOption(), handleLongOptionWithoutEqual(), handleLongOptionWithEqual(), and handleConcatenatedOptions().
+- Explanation: The method combines multiple token-recognition strategies and option-processing paths in one substantial conditional structure. Its numerous nested branches make its control flow comparatively difficult to follow and maintain.
+Detection 2
+- Smell: Long Method
+- Code unit: HelpFormatter.appendOptions(Appendable, int, Options, int, int)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence:
+  - The method spans lines 1131–1193.
+  - It determines padding and column widths, calculates the maximum “Since” column width, sorts options, constructs option prefixes, formats argument names, builds headers, appends deprecation descriptions, and wraps output text.
+  - It contains multiple loops and conditional branches, including the for (final Option option : optList) loop and the subsequent iterator loop over optList.
+- Explanation: This method performs several distinct stages of help-table preparation and rendering, including layout calculations, per-option formatting, and output generation. Its length and accumulated formatting logic make it a strong Long Method candidate.
+Detection 3
+- Smell: Long Method
+- Code unit: HelpFormatter.printUsage(PrintWriter, int, String, Options)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence:
+  - The method spans lines 1342–1365.
+  - It initializes a syntax buffer, collects and sorts options, tracks processed OptionGroup instances, distinguishes grouped from ungrouped options, appends option syntax, and calculates the wrapping position before printing.
+- Explanation: The method combines option ordering, group de-duplication, syntax construction, and output positioning. These multiple responsibilities and nested conditions make it more involved than a straightforward usage-printing operation.
+2. God Class
+Detection 1
+- Smell: God Class
+- Code unit: HelpFormatter
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence:
+  - The class contains numerous public printHelp(), printUsage(), printOptions(), and printWrapped() overloads.
+  - It implements option and option-group syntax generation through appendOption(), appendOptionGroup(), and printUsage().
+  - It implements layout and text wrapping through appendOptions(), appendWrappedText(), findWrapPos(), createPadding(), and rtrim().
+  - It also manages output configuration, including defaultWidth, defaultLeftPad, defaultDescPad, defaultSyntaxPrefix, optionComparator, and longOptSeparator, with corresponding getters and setters.
+- Explanation: The class combines public help-printing APIs, option-syntax generation, text-layout algorithms, output handling, and mutable formatting configuration. The breadth of its methods and responsibilities makes it a reasonably confident God Class detection.
+3. Long Parameter List
+Detection 1
+- Smell: Long Parameter List
+- Code unit: HelpFormatter.printHelp(PrintWriter, int, String, String, Options, int, int, String, boolean)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence:
+  - The method declaration spans lines 1301–1302 and accepts nine parameters:
+    PrintWriter pw, int width, String cmdLineSyntax, String header, Options options, int leftPad, int descPad, String footer, and boolean autoUsage.
+  - The implementation uses these parameters to control the output destination, width, command syntax, header, options, padding, footer, and automatic usage generation.
+- Explanation: Nine parameters expose numerous independent output and formatting settings through a single method signature. The number of arguments makes the method harder to call correctly and increases the burden of understanding its invocation.

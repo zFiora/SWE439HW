@@ -1,0 +1,73 @@
+Code Smell Review: Apache Commons CLI
+The review below is restricted to the three requested smells: Long Method, God Class, and Long Parameter List. Detections are based on the supplied commons-cli-scope.txt source, with file paths taken from its file headers. The findings are ordered by source-file position within each smell category, and borderline cases are excluded where the evidence is insufficient.
+1. Long Method
+Detection 1
+- Smell: Long Method
+- Code unit: DefaultParser.handleShortAndLongOption(String)
+- File: org/apache/commons/cli/DefaultParser.java
+- Evidence: The method spans approximately 50 lines and contains branches for single-character options, short options, long-option matching, prefix matching, Java properties, concatenated options, and =-separated values. Calls include handleOption(), handleLongOptionWithoutEqual(), handleConcatenatedOptions(), handleUnknownToken(), and currentOption.processValue().
+- Explanation: The method handles several distinct token-parsing cases in a deeply nested conditional structure. Its length and combination of option recognition, dispatch, and value processing make its control flow difficult to follow and maintain.
+Detection 2
+- Smell: Long Method
+- Code unit: GnuParser.flatten(Options, String[], boolean)
+- File: org/apache/commons/cli/GnuParser.java
+- Evidence: The method contains an outer loop over arguments, tests for -- and -, checks options.hasOption(), locates = using DefaultParser.indexOfEqual(), splits option/value tokens, recognizes two-character options, and uses eatTheRest to control subsequent argument processing.
+- Explanation: The method combines argument traversal, multiple token-recognition strategies, token splitting, and handling of the stop-at-non-option behavior. These interdependent branches make the method substantially more complex than a single, easily understood operation.
+Detection 3
+- Smell: Long Method
+- Code unit: HelpFormatter.appendOptions(Appendable, int, Options, int, int)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The method builds option prefixes in a loop, sorts options, handles short and long option names, formats argument names, calculates column widths, optionally adds the Since column, formats deprecated-option descriptions, and calls appendWrappedText().
+- Explanation: This method combines option collection, layout measurement, header generation, conditional formatting, and output rendering. The number of responsibilities and the amount of branching and iteration make it a strong Long Method candidate.
+Detection 4
+- Smell: Long Method
+- Code unit: HelpFormatter.printUsage(PrintWriter, int, String, Options)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The method constructs the usage string, copies and sorts options, tracks processed OptionGroup instances in processedGroups, iterates over the options, calls appendOptionGroup() or appendOption(), and finally calls printWrapped().
+- Explanation: It combines ordering, option-group deduplication, rendering of individual options and groups, and final output formatting. These multiple steps and their conditional interactions make the method relatively difficult to understand as one unit.
+Detection 5
+- Smell: Long Method
+- Code unit: PatternOptionBuilder.parsePattern(String)
+- File: org/apache/commons/cli/PatternOptionBuilder.java
+- Evidence: The method loops over every character in pattern, distinguishes value codes from option characters, tracks required, type, and converter, constructs Option objects through Option.builder(), and adds them to an Options instance. It also has a separate finalization block after the loop.
+- Explanation: The method combines pattern interpretation, state management, type and converter selection, and option construction. The branching and duplicated option-finalization logic make it a reasonably confident Long Method candidate.
+Detection 6
+- Smell: Long Method
+- Code unit: PosixParser.flatten(Options, String[], boolean)
+- File: org/apache/commons/cli/PosixParser.java
+- Evidence: The method initializes parser state, iterates through arguments, handles long options and ambiguous matches, processes =-separated values, recognizes short and long option forms, calls processOptionToken(), processNonOptionToken(), and burstToken(), and finally adds remaining tokens.
+- Explanation: This method coordinates several distinct token-processing paths and parser-state behaviors in one loop. Its nested branches and multiple parsing strategies make the control flow difficult to maintain.
+Detection 7
+- Smell: Long Method
+- Code unit: TextStyle.pad(boolean, CharSequence)
+- File: org/apache/commons/cli/help/TextStyle.java
+- Evidence: The method branches on alignment (CENTER, LEFT, and RIGHT), distinguishes UNSET_MAX_WIDTH, calculates padding lengths, accounts for indentation, and conditionally appends the text before or after padding.
+- Explanation: The method combines width handling, indentation rules, alignment-specific calculations, and string assembly. The multiple interacting conditions make it relatively complex for a single formatting operation.
+2. God Class
+Detection 1
+- Smell: God Class
+- Code unit: HelpFormatter
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The class exposes a large API of formatting and output methods, including appendOptions(), appendWrappedText(), printHelp(), printOptions(), printUsage(), renderWrappedTextBlock(), and findWrapPos(). It also maintains formatting configuration such as defaultWidth, defaultLeftPad, defaultDescPad, optionComparator, and longOptSeparator, and directly coordinates Options, Option, OptionGroup, and OptionFormatter.
+- Explanation: The class combines formatting configuration, option and group layout, usage generation, text wrapping, and output management in one large class. Its extensive method surface and coordination of multiple model and formatting types support a God Class classification.
+3. Long Parameter List
+Detection 1
+- Smell: Long Parameter List
+- Code unit: HelpFormatter.printHelp(int, String, String, Options, String, boolean)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The method accepts six parameters: width, cmdLineSyntax, header, options, footer, and autoUsage.
+- Explanation: The method requires six separate inputs to control usage output, descriptive text, option definitions, and rendering behavior. The parameter count exceeds a typical comfortable method signature size.
+Detection 2
+- Smell: Long Parameter List
+- Code unit: HelpFormatter.printHelp(PrintWriter, int, String, String, Options, int, int, String)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The method accepts eight parameters: pw, width, cmdLineSyntax, header, options, leftPad, descPad, and footer.
+- Explanation: The signature combines output destination, usage content, option definitions, layout dimensions, and footer content. The number of independent arguments makes the method signature cumbersome to understand and call correctly.
+Detection 3
+- Smell: Long Parameter List
+- Code unit: HelpFormatter.printHelp(PrintWriter, int, String, String, Options, int, int, String, boolean)
+- File: org/apache/commons/cli/HelpFormatter.java
+- Evidence: The method accepts nine parameters: pw, width, cmdLineSyntax, header, options, leftPad, descPad, footer, and autoUsage.
+- Explanation: The method combines output configuration, content, layout settings, and a rendering-mode flag in one signature. Nine parameters constitute a clear Long Parameter List detection.
+
+Review summary: The review identifies seven Long Method detections, one God Class detection, and three Long Parameter List detections. No other smell categories are included.

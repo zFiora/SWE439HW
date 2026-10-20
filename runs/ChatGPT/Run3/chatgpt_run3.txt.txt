@@ -1,0 +1,164 @@
+Code Smell Review: Apache Commons CLI
+The review is limited to the three requested smells: Long Method, God Class, and Long Parameter List. The findings below are based on the supplied Java source, with emphasis on substantial method complexity, classes with multiple responsibilities, and parameter lists that are unusually large. Routine delegation and short methods are not treated as smells merely because they exist.
+1. Long Method
+Findings
+1. DefaultParser.handleShortAndLongOption(String)
+
+File: org/apache/commons/cli/DefaultParser.java
+
+Evidence: The method contains nested branches for single-character tokens, short options, long-option matching, partial prefixes, Java properties, concatenated options, and =-separated values. It calls handleOption, handleLongOptionWithoutEqual, handleConcatenatedOptions, and handleUnknownToken.
+
+Explanation: The method implements several distinct token-recognition and value-processing paths in a single, deeply branched block. Its length and the number of alternative parsing behaviors make it difficult to follow as one unit.
+
+2. GnuParser.flatten(Options, String[], boolean)
+
+File: org/apache/commons/cli/GnuParser.java
+
+Evidence: The method iterates through arguments, checks eatTheRest, distinguishes -- and -, processes long and short options, splits tokens at =, handles two-character options, and appends remaining arguments.
+
+Explanation: The method combines token classification, option validation, token splitting, and stop-at-non-option behavior. Multiple nested conditional paths make its parsing logic comparatively difficult to understand and maintain.
+
+3. HelpFormatter.appendOptions(Appendable, int, Options, int, int)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: It calculates padding and maximum widths, sorts optList, builds option prefixes, formats argument names, conditionally constructs the “Options / Since / Description” header, applies deprecation formatting, and invokes appendWrappedText.
+
+Explanation: This method combines layout measurement, option formatting, header construction, conditional metadata display, and wrapped output. Its many loops and formatting branches constitute a substantial, multi-stage operation.
+
+4. HelpFormatter.appendWrappedText(Appendable, int, int, String)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: The method calls findWrapPos, trims and appends substrings, adds newlines and padding, adjusts nextLineTabStopPos, and loops until the remaining text fits.
+
+Explanation: It handles several aspects of text wrapping, including boundary detection, whitespace normalization, indentation, and repeated output. The loop and its multiple exit conditions make the control flow more involved than a simple formatting helper.
+
+5. Parser.parse(Options, String[], Properties, boolean)
+
+File: org/apache/commons/cli/Parser.java
+
+Evidence: It clears option values and group selections, initializes parser state, calls flatten, iterates through tokens, handles the -- and - prefixes, branches on stopAtNonOption, processes options or arguments, consumes remaining tokens, processes properties, and checks required options.
+
+Explanation: The method coordinates initialization, token processing, stopping rules, property processing, and final validation. These distinct stages and nested branches make it a substantial method with several responsibilities.
+
+6. Parser.processProperties(Properties)
+
+File: org/apache/commons/cli/Parser.java
+
+Evidence: It enumerates property names, resolves each through options.getOption, checks option groups and command-line presence, processes argument values, validates Boolean-like values ("yes", "true", "1"), adds options, and updates required-option state.
+
+Explanation: The method combines property enumeration, option resolution, group-selection checks, value validation, and parser-state updates. Its nested conditionals and exception-handling path give it a relatively broad scope.
+
+7. PatternOptionBuilder.parsePattern(String)
+
+File: org/apache/commons/cli/PatternOptionBuilder.java
+
+Evidence: The loop distinguishes value codes from option characters, tracks required, type, and converter, constructs options when a new option character is encountered, resets state, creates a TypeHandler and converter map, and finalizes the last option after the loop.
+
+Explanation: The method combines pattern scanning, state management, type/converter selection, and Option construction. Its behavior depends on multiple mutable state variables and several conditional paths.
+
+8. PosixParser.flatten(Options, String[], boolean)
+
+File: org/apache/commons/cli/PosixParser.java
+
+Evidence: It initializes parser state, loops over input tokens, handles special prefixes, resolves partial long-option matches, detects ambiguity, splits values after =, branches between processOptionToken, burstToken, and processNonOptionToken, and appends remaining tokens.
+
+Explanation: The method performs several token-normalization strategies and coordinates option matching, ambiguity handling, token splitting, and stopping behavior. Its nested branches make the parsing procedure long and complex.
+
+9. help.HelpFormatter.getTableDefinition(Iterable<Option>)
+
+File: org/apache/commons/cli/help/HelpFormatter.java
+
+Evidence: It configures TextStyle.Builder repeatedly, builds a list of column styles, iterates over options to create rows through OptionFormatter, conditionally includes the “Since” column, constructs headers, and returns TableDefinition.from(...).
+
+Explanation: The method combines table-layout configuration, per-option formatting, row construction, and header generation. Although each operation is related to table creation, the method contains several distinct stages of work.
+
+10. TextHelpAppendable.adjustTableFormat(TableDefinition)
+
+File: org/apache/commons/cli/help/TextHelpAppendable.java
+
+Evidence: The method contains multiple branches and iterations for adjusting table formatting, including handling column styles, widths, and table layout constraints.
+
+Explanation: Its length and the combination of layout decisions and repeated adjustments indicate a substantial formatting operation. This finding is less certain than the preceding cases because the method's complexity is concentrated in one domain.
+
+11. TextStyle.pad(boolean, CharSequence)
+
+File: org/apache/commons/cli/help/TextStyle.java
+
+Evidence: The method contains a multi-branch switch on alignment and applies text padding and indentation according to the selected alignment and style settings.
+
+Explanation: The method combines alignment-specific formatting with padding behavior in one relatively long method. The multiple distinct cases contribute to its complexity, though this is a lower-confidence detection than the larger parsing methods.
+
+
+2. God Class
+1. HelpFormatter
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence:
+- Numerous public methods for printing help and usage: printHelp, printUsage, printOptions, and printWrapped.
+- Formatting and rendering methods: appendOptions, appendOption, appendOptionGroup, appendWrappedText, renderOptions, renderWrappedText, and renderWrappedTextBlock.
+- Text-layout utilities: createPadding, findWrapPos, rtrim, and determineMaxSinceLength.
+- Configuration responsibilities exposed through numerous getters and setters for width, padding, prefixes, separators, line endings, and option comparators.
+- Dependencies on Option, Options, OptionGroup, OptionFormatter, AbstractHelpFormatter, and Java I/O classes.
+Explanation: The class combines help and usage generation, option and option-group formatting, text wrapping, layout calculations, output handling, and extensive formatting configuration. Its large method surface and broad interaction with other classes make it a strong candidate for a God Class.
+
+Other classes: None found with sufficient confidence. DefaultParser, CommandLine, and Option contain substantial functionality, but their methods are more consistently centered on parsing, command-line results, and option representation, respectively. Their size alone is insufficient to establish the requested smell.
+3. Long Parameter List
+The following methods and constructors have parameter lists that are unusually large or combine several independent inputs. Findings are listed in source-file order.
+1. DefaultParser.parse(Options, Properties, NonOptionAction, String[])
+
+File: org/apache/commons/cli/DefaultParser.java
+
+Evidence: options, properties, nonOptionAction, and the varargs parameter arguments.
+
+Explanation: The method receives four distinct inputs controlling option definitions, default property values, non-option handling policy, and command-line tokens. The list is relatively long for an entry point that also coordinates the complete parsing process.
+
+2. Option(String, String, boolean, String)
+
+File: org/apache/commons/cli/Option.java
+
+Evidence: The constructor accepts option, longOption, hasArg, and description.
+
+Explanation: The constructor requires four separate values to describe an option's short name, long name, argument behavior, and description. This is a borderline case, since four parameters can be reasonable for a constructor, but it meets a common practical threshold for reviewing parameter-list length.
+
+3. HelpFormatter.appendOptions(Appendable, int, Options, int, int)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: sb, width, options, leftPad, and descPad.
+
+Explanation: The method receives five independent inputs covering the output target, layout width, option collection, and two separate padding settings. This creates a relatively long signature for a single formatting operation.
+
+4. HelpFormatter.printHelp(PrintWriter, int, String, String, Options, int, int, String, boolean)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: The signature accepts pw, width, cmdLineSyntax, header, options, leftPad, descPad, footer, and autoUsage.
+
+Explanation: Nine parameters control output, command syntax, header and footer content, option definitions, layout, and usage-generation behavior. This is a clear Long Parameter List detection because the signature combines many independent formatting and presentation choices.
+
+5. HelpFormatter.printOptions(PrintWriter, int, Options, int, int)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: pw, width, options, leftPad, and descPad.
+
+Explanation: Five parameters configure the output destination, width, option collection, and two layout settings. The signature is comparatively large for a method that prints formatted options.
+
+6. HelpFormatter.renderOptions(StringBuffer, int, Options, int, int)
+
+File: org/apache/commons/cli/HelpFormatter.java
+
+Evidence: sb, width, options, leftPad, and descPad.
+
+Explanation: The method accepts five independent arguments, including three separate layout or output parameters in addition to the option definitions. Its signature repeats the same comparatively long configuration set used by appendOptions.
+
+
+Summary
+Smell	Findings
+Long Method	11
+God Class	1
+Long Parameter List	6
+The findings are based on the supplied source file. Borderline cases are identified in their explanations rather than treated as equally certain detections.
