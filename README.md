@@ -28,14 +28,6 @@ Compares code-smell detections from a static analysis tool (**PMD 7.28.0**) and 
 - [x] 3 disagreement cases analysed
 - [x] 11 explanations scored
 - [x] Report and workbook written
-- [x] Names, IDs, Section 01 and date (21 October 2026) filled in
-- [x] DeepSeek settings filled in: Deep thinking off, Smart Search off, no version shown in the web UI (checked from the screenshots of all 3 runs)
-- [x] Report rewritten as a team ("we"); review notes removed
-- [x] LLM Usage Declaration checked
-- [x] Agreed on PMD thresholds (30 statements, 5 parameters) and overloads as separate units
-- [x] Deadline confirmed with the instructor
-- [x] Formatting fixed: 11pt body text, 9pt tables (nothing smaller), consistent line spacing, no blank pages
-- [x] Workbook notes cleaned up and RUN_PROTOCOL.md updated with the settings used
 
 ### Left to do (still highlighted in yellow in the report)
 - [ ] **ChatGPT model name:** Section 1.1 table. Open each saved chat and hover over the retry/regenerate icon under the answer to see the model.
