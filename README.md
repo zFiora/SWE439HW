@@ -30,10 +30,8 @@ Compares code-smell detections from a static analysis tool (**PMD 7.28.0**) and 
 - [x] Report and workbook written
 
 ### Left to do (still highlighted in yellow in the report)
-- [ ] **ChatGPT model name:** Section 1.1 table. Open each saved chat and hover over the retry/regenerate icon under the answer to see the model.
-- [ ] **ChatGPT settings:** confirm web search and memory were really off in all 3 runs (Section 1.1 table; also fix `RUN_PROTOCOL.md` if not)
-- [ ] **Figure 3:** screenshot of PMD running on our machine (the `pmd check` command and its output, Appendix C) and paste it into Section 3.6
-- [ ] **Figures 4–6:** one screenshot per ChatGPT run showing the model name, pasted into Section 3.6; also save them in `runs/ChatGPT/RunN/screenshot/`
+- [ ] Take the missing screenshot: screenshot of PMD running on our machine (commands in Appendix C of the report)
+- [ ] Confrim the chatgpt/deepseek model and fill them in report
 - [ ] Remove the yellow highlighting once each item is filled
 - [ ] Quick final review of the report after the screenshots are in
 - [ ] Export to PDF if required and submit
