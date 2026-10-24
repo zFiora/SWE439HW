@@ -24,6 +24,9 @@ AI assistance used in preparing the analysis and the report is disclosed in the 
 | `pmd_baseline.csv` | The 22 PMD detections with PMD's messages |
 | `RUN_PROTOCOL.md` | How each LLM run was carried out |
 | `runs/ChatGPT/`, `runs/DeepSeek/` | Answers (`.txt`), PDF exports and screenshots for Runs 1–3 |
+| `strip_comments.py` | Script that removes comments and blank lines and builds `commons-cli-scope.txt` |
+| `pmd-ruleset.xml` | The PMD ruleset (GodClass, NcssCount ≥ 30, ExcessiveParameterList ≥ 5) |
+| `reproduce.sh` | Reproduces the tool steps (clone, LOC, bundle, compile check, PMD); output goes to `repro_out/` |
 
 ## Key results
 
